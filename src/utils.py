@@ -74,13 +74,14 @@ def visualize_metrics(writer, step, metrics, tag):
     gc.collect()
     
 
-def init_weights(model, init_type, init_gain):
+def init_weights(model, init_type, init_gain, seeds):
     """Initialize network weights.
 
     Args:
         model (torch.nn.Module): network to be initialized
         init_type (string): the name of an initialization method: normal | xavier | xavier_uniform | kaiming | orthogonal | none
         init_gain (float): scaling factor for normal, xavier and orthogonal
+        seeds (list): list of seeds used for an initialization
 
     Returns:
         model (torch.nn.Module): initialized model with `init_type` and `init_gain`
@@ -89,93 +90,83 @@ def init_weights(model, init_type, init_gain):
         classname = m.__class__.__name__
         if classname.find('BatchNorm2d') != -1:
             if hasattr(m, 'weight') and m.weight is not None:
-                torch.nn.init.normal_(m.weight.data, 1.0, gain=init_gain)
+                torch.manual_seed(seeds[0]); torch.nn.init.normal_(m.weight.data, 1.0, init_gain)
+                if len(seeds) == 2: torch.manual_seed(seeds[-1]); torch.nn.init.normal_(m.weight1.data, 1.0, init_gain)
             if hasattr(m, 'bias') and m.bias is not None:
                 torch.nn.init.constant_(m.bias.data, 0.0)
         elif hasattr(m, 'weight') and (classname.find('Conv') != -1 or classname.find('Linear') != -1):
             if init_type == 'normal':
-                torch.nn.init.normal_(m.weight.data, 0.0, gain=init_gain)
+                torch.manual_seed(seeds[0]); torch.nn.init.normal_(m.weight.data, 0.0, init_gain)
+                if len(seeds) == 2: torch.manual_seed(seeds[-1]); torch.nn.init.normal_(m.weight1.data, 0.0, init_gain)
             elif init_type == 'xavier':
-                torch.nn.init.xavier_normal_(m.weight.data, gain=init_gain)
+                torch.manual_seed(seeds[0]); torch.nn.init.xavier_normal_(m.weight.data, gain=init_gain)
+                if len(seeds) == 2: torch.manual_seed(seeds[-1]); torch.nn.init.xavier_normal_(m.weight1.data, gain=init_gain)
             elif init_type == 'xavier_uniform':
-                torch.nn.init.xavier_uniform_(m.weight.data, gain=1.0)
+                torch.manual_seed(seeds[0]); torch.nn.init.xavier_uniform_(m.weight.data, gain=1.0)
+                if len(seeds) == 2: torch.manual_seed(seeds[-1]); torch.nn.init.xavier_uniform_(m.weight1.data, gain=1.0)
             elif init_type == 'kaiming':
-                torch.nn.init.kaiming_normal_(m.weight.data, a=0, mode='fan_in')
+                torch.manual_seed(seeds[0]); torch.nn.init.kaiming_normal_(m.weight.data, a=0, mode='fan_in')
+                if len(seeds) == 2: torch.manual_seed(seeds[-1]); torch.nn.init.kaiming_normal_(m.weight1.data, a=0, mode='fan_in')
             elif init_type == 'orthogonal':
-                torch.nn.init.orthogonal_(m.weight.data, gain=init_gain)
+                torch.manual_seed(seeds[0]); torch.nn.init.orthogonal_(m.weight.data, gain=init_gain)
+                if len(seeds) == 2: torch.manual_seed(seeds[-1]); torch.nn.init.orthogonal_(m.weight1.data, gain=init_gain)
             elif init_type == 'none':  # uses pytorch's default init method
                 m.reset_parameters()
             else:
                 raise NotImplementedError(f'[ERROR] Initialization method {init_type} is not implemented!')
             if hasattr(m, 'bias') and m.bias is not None:
                 torch.nn.init.constant_(m.bias.data, 0.0)
+        elif classname.find('LSTM') != -1:
+            for l in range(m.num_layers):
+                if init_type == 'normal':
+                    torch.manual_seed(seeds[0]); torch.nn.init.normal_(getattr(m, f'weight_hh_l{l}'), 0.0, init_gain); torch.nn.init.normal_(getattr(m, f'weight_ih_l{l}'), 0.0, init_gain)
+                    if len(seeds) == 2: torch.manual_seed(seeds[-1]); torch.nn.init.normal_(getattr(m, f'weight_hh_l{l}_1'), 0.0, init_gain); torch.nn.init.normal_(getattr(m, f'weight_ih_l{l}_1'), 0.0, init_gain)
+                elif init_type == 'xavier':
+                    torch.manual_seed(seeds[0]); torch.nn.init.xavier_normal_(getattr(m, f'weight_hh_l{l}'), gain=init_gain); torch.nn.init.xavier_normal_(getattr(m, f'weight_ih_l{l}'), gain=init_gain)
+                    if len(seeds) == 2: torch.manual_seed(seeds[-1]); torch.nn.init.xavier_normal_(getattr(m, f'weight_hh_l{l}_1'), gain=init_gain); torch.nn.init.xavier_normal_(getattr(m, f'weight_ih_l{l}_1'), gain=init_gain)
+                elif init_type == 'xavier_uniform':
+                    torch.manual_seed(seeds[0]); torch.nn.init.xavier_uniform_(getattr(m, f'weight_hh_l{l}'), gain=1.0); torch.nn.init.xavier_uniform_(getattr(m, f'weight_ih_l{l}'), gain=1.0)
+                    if len(seeds) == 2: torch.manual_seed(seeds[-1]); torch.nn.init.xavier_uniform_(getattr(m, f'weight_hh_l{l}_1'), gain=1.0); torch.nn.init.xavier_uniform_(getattr(m, f'weight_ih_l{l}_1'), gain=1.0)
+                elif init_type == 'kaiming':
+                    torch.manual_seed(seeds[0]); torch.nn.init.kaiming_normal_(getattr(m, f'weight_hh_l{l}'), a=0, mode='fan_in'); torch.nn.init.kaiming_normal_(getattr(m, f'weight_ih_l{l}'), a=0, mode='fan_in')
+                    if len(seeds) == 2: torch.manual_seed(seeds[-1]); torch.nn.init.kaiming_normal_(getattr(m, f'weight_hh_l{l}_1'), a=0, mode='fan_in'); torch.nn.init.kaiming_normal_(getattr(m, f'weight_ih_l{l}_1'), a=0, mode='fan_in')
+                elif init_type == 'orthogonal':
+                    torch.manual_seed(seeds[0]); torch.nn.init.orthogonal_(getattr(m, f'weight_hh_l{l}'), gain=init_gain); torch.nn.init.orthogonal_(getattr(m, f'weight_ih_l{l}'), gain=init_gain)
+                    if len(seeds) == 2: torch.manual_seed(seeds[-1]); torch.nn.init.orthogonal_(getattr(m, f'weight_hh_l{l}_1'), gain=init_gain); torch.nn.init.orthogonal_(getattr(m, f'weight_ih_l{l}_1'), gain=init_gain)
+                elif init_type == 'none':  # uses pytorch's default init method
+                    m.reset_parameters()
+                else:
+                    raise NotImplementedError(f'[ERROR] Initialization method {init_type} is not implemented!')
+                if m.bias is True:
+                    torch.nn.init.constant_(getattr(m, f'bias_hh_l{l}'), 0.0); torch.nn.init.constant_(getattr(m, f'bias_ih_l{l}'), 0.0)
+                    if len(seeds) == 2: torch.nn.init.constant_(getattr(m, f'bias_hh_l{l}_1'), 0.0); torch.nn.init.constant_(getattr(m, f'bias_ih_l{l}_1'), 0.0)
     model.apply(init_func)
     return model
 
-def init_weights(model, init_type, init_gain, seeds):
-    """Function for initializing network weights.
+def initiate_model(model, args):
+    """Initiate model instance; use multi-GPU if available.
     
     Args:
-        model: A torch.nn instance to be initialized.
-        init_type: Name of an initialization method (normal | xavier | kaiming | orthogonal).
-        init_gain: Scaling factor for (normal | xavier | orthogonal).
-    
-    Reference:
-        https://github.com/DS3Lab/forest-prediction/blob/master/pix2pix/models/networks.py
-    """
-    def init_func(m):
-        classname = m.__class__.__name__
-        if hasattr(m, 'weight') and classname.find('Conv') != -1:
-            if init_type == 'normal':
-                torch.manual_seed(seeds[0])
-                init.normal_(m.weight.data, 0.0, init_gain)
-                
-                torch.manual_seed(seeds[1])
-                init.normal_(m.weight1.data, 0.0, init_gain)
-            elif init_type == 'xavier':
-                torch.manual_seed(seeds[0])
-                init.xavier_normal_(m.weight.data, init_gain)
-                
-                torch.manual_seed(seeds[1])
-                init.xavier_normal_(m.weight1.data, init_gain)
-            elif init_type == 'kaiming':
-                torch.manual_seed(seeds[0])
-                init.kaiming_normal_(m.weight.data, a=0, mode='fan_in')
-                
-                torch.manual_seed(seeds[1])
-                init.kaiming_normal_(m.weight1.data, a=0, mode='fan_in')
-            else:
-                raise NotImplementedError(f'[ERROR] ...initialization method [{init_type}] is not implemented!')
-            if hasattr(m, 'bias') and m.bias is not None:
-                init.constant_(m.bias.data, 0.0)
-        elif classname.find('BatchNorm2d') != -1 or classname.find('InstanceNorm2d') != -1:
-            torch.manual_seed(seeds[0])
-            init.normal_(m.weight.data, 1.0, init_gain)
-            
-            torch.manual_seed(seeds[1])
-            init.normal_(m.weight1.data, 1.0, init_gain)
-            
-            init.constant_(m.bias.data, 0.0)
-    model.apply(init_func)
-
-def init_net(model, init_type, init_gain, gpu_ids, seeds):
-    """Function for initializing network weights.
-    
-    Args:
-        model: A torch.nn.Module to be initialized
-        init_type: Name of an initialization method (normal | xavier | kaiming | orthogonal)l
-        init_gain: Scaling factor for (normal | xavier | orthogonal).
-        gpu_ids: List or int indicating which GPU(s) the network runs on. (e.g., [0, 1, 2], 0)
+        model (nn.Module): model instance to initiate
+        args (argument): parsed arguments
     
     Returns:
-        An initialized torch.nn.Module instance.
+        model: (nn.Module) initiated instance
     """
-    if len(gpu_ids) > 0:
-        assert(torch.cuda.is_available())
-        model.to(gpu_ids[0])
-        model = nn.DataParallel(model, gpu_ids)
-    init_weights(model, init_type, init_gain, seeds)
-    return model
+    # initialize model
+    model = init_weights(model, args.init_type, args.init_gain, args.init_seed)
+    
+    # GPU setting
+    if 'cuda' in args.device:
+        if torch.cuda.device_count() > 1:
+            model_instance = torch.nn.DataParallel(model, device_ids=[i for i in range(torch.cuda.device_count())])
+        else:
+            model_instance = model
+    # CPU setting
+    else:
+        model_instance = model
+    model_instance = model_instance.to(args.device)
+    return model_instance
 
 ################
 # TinyImageNet #

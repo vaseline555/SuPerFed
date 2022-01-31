@@ -21,35 +21,9 @@ logger = logging.getLogger(__name__)
 
 
 class Server(object):
-    """Class for implementing center server orchestrating the whole process of federated learning
-    
-    At first, center server distribute model skeleton to all participating clients with configurations.
-    While proceeding federated learning rounds, the center server samples some fraction of clients,
-    receives locally updated parameters, averages them as a global parameter (model), and apply them to global model.
-    In the next round, newly selected clients will recevie the updated global model as its local model.  
-    
-    Attributes:
-        clients: List containing Client instances participating a federated learning.
-        __round: Int for indcating the current federated round.
-        writer: SummaryWriter instance to track a metric and a loss of the global model.
-        model: torch.nn instance for a global model.
-        seed: Int for random seed.
-        device: Training machine indicator (e.g. "cpu", "cuda").
-        mp_flag: Boolean indicator of the usage of multiprocessing for "client_update" and "client_evaluate" methods.
-        data_path: Path to read data.
-        dataset_name: Name of the dataset.
-        num_shards: Number of shards for simulating non-IID data split (valid only when 'iid = False").
-        iid: Boolean Indicator of how to split dataset (IID or non-IID).
-        init_config: kwargs for the initialization of the model.
-        fraction: Ratio for the number of clients selected in each federated round.
-        num_clients: Total number of participating clients.
-        local_epochs: Epochs required for client model update.
-        batch_size: Batch size for updating/evaluating a client/global model.
-        criterion: torch.nn instance for calculating loss.
-        optimizer: torch.optim instance for updating parameters.
-        optim_config: Kwargs provided for optimizer.
+    """Central server orchestrating the whole process of a federated learning.
     """
-    def __init__(self, writer, args):
+    def __init__(self, args, writer):
         self.clients = None
         self._round = 0
         self.writer = writer

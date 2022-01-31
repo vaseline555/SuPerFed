@@ -7,7 +7,7 @@ import torch.nn.functional as F
 # Models from FedAvg paper (McMahan et al., 2016) #
 ###################################################
 class TwoNN(nn.Module):
-    def __init__(self, builder):
+    def __init__(self, builder, args, block=None):
         super(TwoNN, self).__init__()
         self.layers = nn.Sequential(
             builder.linear(in_features=784, out_features=200, bias=True),
@@ -24,7 +24,7 @@ class TwoNN(nn.Module):
         return x
 
 class TwoCNN(nn.Module):
-    def __init__(self, builder):
+    def __init__(self, builder, args, block=None):
         super(TwoCNN, self).__init__()
         self.activation = nn.ReLU(True)
         self.layers = nn.Sequential(
@@ -43,17 +43,18 @@ class TwoCNN(nn.Module):
     def forward(self, x):
         return self.layers(x)
 
-class NextCharLSTM(nn.Module):
-    def __init__(self, builder):
-        super(NextCharacterLSTM, self).__init__()
+class NextCharLM(nn.Module):
+    def __init__(self, builder, args, block=None):
+        super(NextCharLM, self).__init__()
+        self.num_layers = 2
         self.encoder = builder.embedding(len(string.printable), 8)
         self.rnn = builder.lstm(
             input_size=8,
             hidden_size=256,
-            num_layers=2,
+            num_layers=self.num_layers,
             batch_first=True
         )
-        self.decoder = builder.fc_layer(256, len(string.printable))
+        self.decoder = builder.linear(256, len(string.printable))
 
     def forward(self, x):
         encoded = self.encoder(x)
@@ -88,13 +89,13 @@ class BasicBlock(nn.Module):
         return out
 
 class ResNet18(nn.Module):
-    def __init__(self, builder, block, in_channels, num_classes):
+    def __init__(self, builder, args, block):
         super(ResNet18, self).__init__()
         self.base_width = 64
         
         # input layer
         self.in_conv = nn.Sequential(
-            builder.conv(in_channels=in_channels, out_channels=self.base_width, kernel_size=3, stride=2),
+            builder.conv(in_channels=args.in_channels, out_channels=self.base_width, kernel_size=3, stride=2),
             builder.bn(self.base_width),
             nn.ReLU(inplace=True)
         )
@@ -109,7 +110,7 @@ class ResNet18(nn.Module):
         self.flatten = nn.Flatten()
         
         # classifier
-        self.fc = builder.fc(in_features=512 * block.expansion, out_features=num_classes)
+        self.fc = builder.linear(in_features=512 * block.expansion, out_features=args.num_classes)
 
     def _make_layer(self, builder, block, planes, num_layers, stride=1):
         # define downsample operation
@@ -192,7 +193,7 @@ class InvertedBlock(nn.Module):
         return self.layers(x)
 
 class MobileNetv2(nn.Module):
-    def __init__(self, builder, block, in_channels, num_classes, is_small):
+    def __init__(self, builder, args, block):
         super(MobileNetv2, self).__init__()
         self.builder = builder
         self.configs = [ # t, c, n, s
@@ -207,8 +208,8 @@ class MobileNetv2(nn.Module):
         
         # input layer
         self.in_conv = nn.Sequential(
-            builder.conv(in_channels=in_channels, out_channels=in_channels, kernel_size=3),
-            builder.conv(in_channels=in_channels, out_channels=32, kernel_size=3, stride=1 if is_small else 2),
+            builder.conv(in_channels=args.in_channels, out_channels=args.in_channels, kernel_size=3),
+            builder.conv(in_channels=args.in_channels, out_channels=32, kernel_size=3, stride=1 if args.is_small else 2),
             builder.bn(32),
             nn.ReLU6(inplace=True)
         )
@@ -241,7 +242,7 @@ class MobileNetv2(nn.Module):
         # classifier
         self.classifier = nn.Sequential(
             nn.Dropout2d(0.2),
-            builder.linear(in_features=5120, out_features=num_classes)
+            builder.linear(in_features=5120, out_features=args.num_classes)
         )
 
     def forward(self, x):
