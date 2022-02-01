@@ -23,7 +23,7 @@ class Client(object):
         id: Integer indicating client's id.
         data: torch.utils.data.Dataset instance containing local data.
         device: Training machine indicator (e.g. "cpu", "cuda").
-        __model: torch.nn instance as a local model.
+        __model: torch.nn.Module instance as a local model.
     """
     def __init__(self, client_id, local_data, device):
         """Client object is initiated by the center server."""

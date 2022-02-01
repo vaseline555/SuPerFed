@@ -12,7 +12,8 @@ import numpy as np
 from torch.utils.tensorboard import SummaryWriter
 
 from src.server import Server
-from src.utils import launch_tensor_board, initiate_model
+from src.utils import launch_tensor_board, initiate_model, split_data
+from src.dataset import get_dataset
 from src.models.builder import Builder
 from src.models import models
 
@@ -38,7 +39,13 @@ def main(args, writer):
     ###################
     # Prepare dataset #
     ###################
-    # split dataset
+    # get dataset
+    dataset = get_dataset(args)
+    
+    # split dataset using labels
+    split_indices, stats = split_data(args)
+    
+
     
     
     
