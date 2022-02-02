@@ -160,10 +160,10 @@ if __name__ == "__main__":
     # set global logger
     logger = logging.getLogger(__name__)
     logging.basicConfig(
-        filename=os.path.join(args.log_path, f"{args.exp_name}.log"),
+        filename=os.path.join(args.log_path, f'{args.exp_name}.log'),
         level=logging.INFO,
-        format="[%(levelname)s](%(asctime)s) %(message)s",
-        datefmt="%Y/%m/%d/ %I:%M:%S %p"
+        format='[%(levelname)s](%(asctime)s) %(message)s',
+        datefmt='%Y/%m/%d/ %I:%M:%S %p'
     )
     
     # display and log experiment configuration
