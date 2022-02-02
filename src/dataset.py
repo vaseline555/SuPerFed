@@ -89,7 +89,7 @@ class TinyImageNetDataset(torch.utils.data.Dataset):
     def __init__(self, args, indices=None, train=True, transform=None, target_transform=None, download=False):
         self.root = args.data_path
         self.dataset_name = args.dataset
-        self.train = args.train
+        self.train = train
         self.transform = transform
         self.target_transform = target_transform
         self.indices = indices
