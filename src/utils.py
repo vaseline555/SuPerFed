@@ -36,44 +36,48 @@ def launch_tensor_board(log_path, port, host):
     os.system(f"tensorboard --logdir={log_path} --port={port} --host={host}")
     return True
 
-def visualize_metrics(writer, step, metrics, tag):
-    """
-    Visualization of confusion matrix
 
-    Parameters:
-        writer (tensorboard.SummaryWriter): TensorBoard SummaryWriter instance.
-        step (int): Counter usually specifying steps/epochs/time.
-        matrix (numpy.array): Square-shaped array of size class x class.
-            Should specify cross-class accuracies/confusion in percent
-            values (range 0-1).
-        class_dict (dict): Dictionary specifying class names as keys and
-            corresponding integer labels/targets as values.
-    """
 
-    # Create the figure
-    fig = plt.figure()
-    x = np.arange(0, 1.1, 0.1)
-    y = torch.Tensor(metrics).mean(0).numpy()[::-1]
-    yerr = np.where(torch.Tensor(metrics).std(0) == 0, np.nan, torch.Tensor(metrics).std(0))[::-1]
+#######################
+# Datset manipulation #
+#######################
+# https://github.com/UCSC-REAL/cores/blob/main/data/utils.py
+def multiclass_noisify(targets, P, seed):
+    assert P.shape[0] == P.shape[1]
+    assert np.max(targets) < P.shape[0]
+    np.testing.assert_array_almost_equal(P.sum(axis=1), np.ones(P.shape[1]))
+    assert (P >= 0.0).all()
 
-    ax = fig.add_subplot(111)
-    ax.errorbar(x, y, yerr=yerr, marker='o')
-    plt.title(f"Round{str(step).zfill(4)}_{tag}")
-    plt.tight_layout()
-    buf = io.BytesIO()
-    plt.savefig(buf, format='jpeg')
-    buf.seek(0)
-    
-    image = PIL.Image.open(buf)
-    image = transforms.ToTensor()(image)
-    writer.add_image(tag, image, step)
-    
-    plt.close(fig)
-    
-    del fig
-    gc.collect()
-    
+    noisy_targets = targets.copy()
+    flipper = np.random.RandomState(seed)
 
+    for idx in np.arange(len(targets)):
+        i = targets[idx]
+        flipped = flipper.multinomial(n=1, pvals=P[i, :], size=1)[0]
+        noisy_targets[idx] = np.where(flipped == 1)[0]
+    return noisy_targets
+
+def multiclass_symmetric_noisify(targets, noise_rate, seed, num_classes):
+    P = np.ones((num_classes, num_classes))
+    P *= (noise_rate / (num_classes - 1)) 
+
+    if noise_rate > 0.0:
+        # 0 -> 1
+        P[0, 0] = 1. - noise_rate
+        for i in range(1, num_classes-1):
+            P[i, i] = 1. - noise_rate
+        P[num_classes - 1, num_classes - 1] = 1. - noise_rate
+
+        noisy_targets = multiclass_noisify(targets, P, seed)
+        actual_noise = (np.array(noisy_targets).flatten() != np.array(targets).flatten()).mean()
+        assert actual_noise > 0.0
+    return np.array(noisy_targets).flatten(), actual_noise
+
+
+
+###################
+# Model initation #
+###################
 def init_weights(model, init_type, init_gain, seeds):
     """Initialize network weights.
 
@@ -168,12 +172,12 @@ def initiate_model(model, args):
     model_instance = model_instance.to(args.device)
     return model_instance
 
+
+
 ################
 # TinyImageNet #
 ################
-def normalize_tin_val_folder_structure(path,
-                                       images_folder='images',
-                                       annotations_file='val_annotations.txt'):
+def normalize_tin_val_folder_structure(path, images_folder='images', annotations_file='val_annotations.txt'):
     # Check if files/annotations are still there to see
     # if we already run reorganize the folder structure.
     images_folder = os.path.join(path, images_folder)

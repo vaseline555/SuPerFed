@@ -87,6 +87,9 @@ if __name__ == "__main__":
     
     # default arguments
     parser.add_argument('--exp_name', type=str, help='name of the experiment', required=True)
+    parser.add_argument('--exp_type', help='type of an expriment to conduct', type=str, choices=['iid', 'pathological', 'dirichlet', 'realistic', 'label-noise', 'ood'])
+    parser.add_argument('--algo_type', help='type of an algorithm to use', type=str, choices=['fedavg', 'fedprox', 'lg-fedavg', 'fedper', 'fedrep', 'ditto', 'apfl', 'pfedme', 'superfed-mm', 'superfed-lm'])
+    parser.add_argument('--use_local_tuning', help='use local fine-tuning for a personalization (if passed)', default='store_true')
     parser.add_argument('--global_seed', help='global random seed (applied EXCEPT model initiailization)', type=int, default=5959)
     parser.add_argument('--device', help='device to use, either cpu or cuda; default is cpu', type=str, default='cpu', choices=['cpu', 'cuda'])
     parser.add_argument('--data_path', help='data path', type=str, default='./data')
@@ -100,7 +103,6 @@ if __name__ == "__main__":
     parser.add_argument('--in_channels', help='input channels for image dataset (ignored when `Shakespeare` dataset is used)', type=int, default=3)
     parser.add_argument('--num_classes', help='number of classes to predict (ignored when `Shakespeare` dataset is used)', type=int, default=10)
     parser.add_argument('--num_shards', help='how many shards to be assigned for each client ignored if `iid=True` for pathological non-IID setting (MNIST & CIFAR10)', type=int)
-    parser.add_argument('--iid', help='whether to simulate statistical homogeneity across clients (yes if passed)', default='store_true')
     parser.add_argument('--a', help='shape parameter for a Dirichlet distribution used for splitting data in non-IID manner', type=float, default=0.5)
     
     # federated learning arguments
