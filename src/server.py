@@ -13,9 +13,8 @@ from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
 from collections import OrderedDict
 
-from .models import *
-from .utils import *
-from .client import Client
+from utils import *
+from client import Client
 
 logger = logging.getLogger(__name__)
 
@@ -23,120 +22,86 @@ logger = logging.getLogger(__name__)
 class Server(object):
     """Central server orchestrating the whole process of a federated learning.
     """
-    def __init__(self, args, writer):
+    def __init__(self, args, writer, model, server_testset, client_datasets):
+        # default attributes
+        self.args = args
+        self.writer = writer
+        self.model = model
+        
+        # datasets
+        self.server_testset = server_testset
+        self.client_datasets = client_datasets
+        
+        # federated learning related attributes
         self.clients = None
         self._round = 0
-        self.writer = writer
-        
-        self.model = eval(args.model_name)(args.model_name, args.in_channels, args.hidden_channels, args.num_hiddens, args.num_classes)
-        
-        self.seed = args.global_seed
-        self.device = args.device
-        self.eta_max = args.lr
-        
-        self.data_path = args.data_path
-        self.dataset_name = args.dataset
-        self.num_shards = args.num_shards
-        self.iid = args.iid
-        
-        self.gpu_ids = [0] if self.device=="cuda" else []
-        self.init_config = {"init_type": args.init_type, "init_gain": args.init_gain, "seeds": list(map(int, args.init_seed)), "gpu_ids": self.gpu_ids}
-
         self.fraction = args.C
         self.num_clients = args.K
         self.num_rounds = args.R
-        self.local_epochs = args.E
-        self.batch_size = args.B
-        self.per_frac = args.L
+        self.algorithm = args.algorithm
         
-        self.mu = args.mu
-        self.beta = args.beta
-        self.per_lr = args.p_lr
-        self.per_epoch = args.p_e
+        # personalization realted attributes
+        self.start_personalization = int(args.L * args.R)
         self.optimizer = torch.optim.SGD
-        self.optim_config = {"momentum": 0.9}
         self.criterion = torch.nn.CrossEntropyLoss
         
-        self.results = {"global_loss": [], "global_acc": [], 'global_top_k_accs': [],
-                        "init_loss_mean": [], "init_loss_std": [],
-                        "per_loss_mean": [], "per_loss_std": [],
-                        "init_acc_mean": [], "init_acc_std": [],
-                        "per_acc_mean": [], "per_acc_std": [],
-                        'init_ece_mean': [], 'init_ece_std': [],
+        # result container
+        self.results = {'global_loss': [], 'global_top1_acc': [], 'global_top5_acc': [],
+                        'base_loss_mean': [], 'base_loss_std': [],
+                        'per_loss_mean': [], 'per_loss_std': [],
+                        'base_top1_acc_mean': [], 'base_top1_acc_mean': [],
+                        'per_top1_acc_mean': [], 'per_top1_acc_std': [],
+                        'base_top5_acc_mean': [], 'base_top6_acc_mean': [],
+                        'per_top5_acc_mean': [], 'per_top6_acc_std': [],
+                        'base_ece_mean': [], 'base_ece_std': [],
                         'per_ece_mean': [], 'per_ece_std': []}
-        
-    def setup(self, **init_kwargs):
+    
+     def create_clients(self, local_datasets):
+        """Initialize each client instance.
+        """
+        clients = []
+        for k, (training_set, test_set) in tqdm(enumerate(local_datasets), desc='[INFO] ...enroll clients to the server!', leave=False):
+            client = Client(args=self.args, client_id=k, training_set=training_set, test_set=test_set, device=self.device)
+            client.model = copy.deepcopy(self.model)
+            client.initialize_model()
+            client.optimizer = copy.deepcopy(self.optimizer)
+            client.criterion = copy.deepcopy(self.criterion)
+            clients.append(client)
+        else:
+            message = f'[Round: {str(self._round).zfill(4)}] ...successfully created all {str(self.num_clients)} clients!'
+            print(message); logging.info(message)
+            del message; gc.collect()
+        return clients
+    
+    def setup(self):
         """Set up all configuration for federated learning."""
-        # valid only before the very first round
+        # valid only at the very first round
         assert self._round == 0
-
-        # initialize weights of the model
-        torch.manual_seed(self.seed)
-        init_net(self.model, **self.init_config)
-        
-        message = f"[Round: {str(self._round).zfill(4)}] ...successfully initialized model (# parameters: {str(sum(p.numel() for p in self.model.parameters()))})!"
-        print(message); logging.info(message)
-        del message; gc.collect()
-
-        # split local dataset for each client
-        local_datasets, test_dataset = create_datasets(self.data_path, self.dataset_name, self.num_clients, self.num_shards, self.iid)
         
         # assign dataset to each client
         self.clients = self.create_clients(local_datasets)
-
-        # prepare hold-out dataset for evaluation
-        self.data = test_dataset
-        self.dataloader = DataLoader(test_dataset, batch_size=self.batch_size, shuffle=False, drop_last=True)
-        
-        # configure detailed settings for client upate and 
-        self.setup_clients(
-            batch_size=self.batch_size, num_local_epochs=self.local_epochs,
-            optimizer=copy.deepcopy(self.optimizer), optim_config=self.optim_config, criterion=copy.deepcopy(self.criterion),
-            mu=self.mu, beta=self.beta
-            )
+        del self.client_datasets; gc.collect()
         
         # send the model skeleton to all clients
         self.transmit_model()
-        
-    def create_clients(self, local_datasets):
-        """Initialize each Client instance."""
-        clients = []
-        for k, dataset in tqdm(enumerate(local_datasets), leave=False):
-            client = Client(client_id=k, local_data=dataset, device=self.device)
-            clients.append(client)
-
-        message = f"[Round: {str(self._round).zfill(4)}] ...successfully created all {str(self.num_clients)} clients!"
-        print(message); logging.info(message)
-        del message; gc.collect()
-        return clients
-
-    def setup_clients(self, **client_config):
-        """Set up each client."""
-        for k, client in tqdm(enumerate(self.clients), leave=False):
-            client.setup(**client_config)
-        
-        message = f"[Round: {str(self._round).zfill(4)}] ...successfully finished setup of all {str(self.num_clients)} clients!"
-        print(message); logging.info(message)
-        del message; gc.collect()
 
     def transmit_model(self, sampled_client_indices=None):
-        """Send the updated global model to selected/all clients."""
         if sampled_client_indices is None:
             # send the global model to all clients before the very first and after the last federated round
             assert (self._round == 0) or (self._round == self.num_rounds)
 
-            for idx, client in tqdm(enumerate(self.clients), leave=False):
+            for idx, client in tqdm(enumerate(self.clients), desc='[INFO] ...transmit global models to clients!', leave=False):
                 client.model = copy.deepcopy(self.model)
                 
-            message = f"[Round: {str(self._round).zfill(4)}] ...successfully transmitted models to all {str(self.num_clients)} clients!"
+            message = f'[Round: {str(self._round).zfill(4)}] ...successfully transmitted models to all {str(self.num_clients)} clients!'
             print(message); logging.info(message)
             del message; gc.collect()
         else:
             # send the global model to selected clients
-            assert self._round != 0
+            assert self._round > 0
 
-            # only send global model (alpha = 0)
-            partial = {k: v for k, v in self.model.state_dict().items() if 'weight1' not in k}
+            # only send a global model (alpha = 0)
+            partial = {k: v for k, v in self.model.state_dict().items() if '_1' not in k}
             for idx in tqdm(sampled_client_indices, leave=False):
                 state = self.clients[idx].model.state_dict()
                 state.update(partial)
@@ -330,7 +295,7 @@ class Server(object):
         """Evaluate the global model using the global holdout dataset (self.data)."""
         self.model.eval()
         self.model.to(self.device)
-        
+        DataLoader(test_dataset, batch_size=self.batch_size, shuffle=False, drop_last=True)
         best_acc, best_loss, best_topk = 0, 1000, 0
         for alpha in [0.0]:
             # set alpha for inference
@@ -383,17 +348,17 @@ class Server(object):
 
             self.writer.add_scalars(
                 'Global Loss',
-                {f"[{exp_name}] {self.dataset_name}_{self.model.name}_C_{self.fraction}, E_{self.local_epochs}, B_{self.batch_size}, IID_{self.iid}": test_loss},
+                {f"[{exp_name}] {self.dataset_name}_{self.model.name}_C_{self.fraction}, E_{self.local_epochs}, B_{self.batch_size}": test_loss},
                 self._round
                 )
             self.writer.add_scalars(
                 'Global Accuracy', 
-                {f"[{exp_name}] {self.dataset_name}_{self.model.name}_C_{self.fraction}, E_{self.local_epochs}, B_{self.batch_size}, IID_{self.iid}": test_accuracy},
+                {f"[{exp_name}] {self.dataset_name}_{self.model.name}_C_{self.fraction}, E_{self.local_epochs}, B_{self.batch_size}": test_accuracy},
                 self._round
                 )
             self.writer.add_scalars(
                 'Global Top 5 Accuracy', 
-                {f"[{exp_name}] {self.dataset_name}_{self.model.name}_C_{self.fraction}, E_{self.local_epochs}, B_{self.batch_size}, IID_{self.iid}": top_k_accs},
+                {f"[{exp_name}] {self.dataset_name}_{self.model.name}_C_{self.fraction}, E_{self.local_epochs}, B_{self.batch_size}": top_k_accs},
                 self._round
                 )
             

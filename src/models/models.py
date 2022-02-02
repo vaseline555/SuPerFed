@@ -13,14 +13,15 @@ class TwoNN(nn.Module):
             builder.linear(in_features=784, out_features=200, bias=True),
             nn.ReLU(True),
             builder.linear(in_features=200, out_features=200, bias=True),
-            nn.ReLU(True),
-            builder.linear(in_features=200, out_features=10, bias=True)
+            nn.ReLU(True)
         )
+        self.classifier = builder.linear(in_features=200, out_features=10, bias=True)
 
     def forward(self, x):
         if x.ndim == 4:
             x = x.view(x.size(0), -1)
         x = self.layers(x)
+        x = self.classifier(x)
         return x
 
 class TwoCNN(nn.Module):
@@ -36,12 +37,14 @@ class TwoCNN(nn.Module):
             nn.MaxPool2d(kernel_size=2, padding=1),
             nn.Flatten(),
             builder.linear(in_features=(32 * 2) * (7 * 7), out_features=200, bias=True),
-            nn.ReLU(True),
-            builder.linear(in_features=200, out_features=10, bias=True)
+            nn.ReLU(True)
         )
+        self.classifier = builder.linear(in_features=200, out_features=10, bias=True)
         
     def forward(self, x):
-        return self.layers(x)
+        x = self.layers(x)
+        x = self.classifier(x)
+        return x
 
 class NextCharLM(nn.Module):
     def __init__(self, builder, args, block=None):
@@ -54,12 +57,12 @@ class NextCharLM(nn.Module):
             num_layers=self.num_layers,
             batch_first=True
         )
-        self.decoder = builder.linear(256, len(string.printable))
+        self.classifier = builder.linear(256, len(string.printable))
 
     def forward(self, x):
         encoded = self.encoder(x)
         output, _, _ = self.rnn(encoded)
-        output = self.decoder(output)
+        output = self.classifier(output)
         output = output.permute(0, 2, 1)  # change dimension to (B, C, T)
         return output
 
@@ -110,7 +113,7 @@ class ResNet18(nn.Module):
         self.flatten = nn.Flatten()
         
         # classifier
-        self.fc = builder.linear(in_features=512 * block.expansion, out_features=args.num_classes)
+        self.classifier = builder.linear(in_features=512 * block.expansion, out_features=args.num_classes)
 
     def _make_layer(self, builder, block, planes, num_layers, stride=1):
         # define downsample operation
@@ -148,7 +151,7 @@ class ResNet18(nn.Module):
         
         # classifier
         feats = self.avgpool(x)
-        x = self.fc(self.flatten(feats))
+        x = self.classifier(self.flatten(feats))
         return x
     
 

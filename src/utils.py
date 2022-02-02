@@ -1,23 +1,10 @@
 import os
-import gc
 import logging
-import io
-import PIL.Image
-import shutil
-
-import matplotlib.pyplot as plt
-import numpy as np
 import torch
-import torch.nn as nn
-import torch.nn.init as init
-import torch.nn.functional as F
+import torchvision
+import numpy as np
 
-from torch.utils.data import Dataset, TensorDataset, ConcatDataset, Subset
-from torchvision import datasets, transforms
-
-from torchvision.datasets import ImageFolder
-from torchvision.datasets.utils import verify_str_arg
-from torchvision.datasets.utils import download_and_extract_archive
+from dataset import MNISTDataset, CIFARDataset, NoisyMNISTDataset, NoisyCIFARDataset, TinyImageNetDataset, LEAFParser
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +28,7 @@ def launch_tensor_board(log_path, port, host):
 #######################
 # Datset manipulation #
 #######################
+# for simulating a label noise
 # https://github.com/UCSC-REAL/cores/blob/main/data/utils.py
 def multiclass_noisify(targets, P, seed):
     assert P.shape[0] == P.shape[1]
@@ -57,6 +45,21 @@ def multiclass_noisify(targets, P, seed):
         noisy_targets[idx] = np.where(flipped == 1)[0]
     return noisy_targets
 
+def multiclass_pair_noisify(targets, noise_rate, seed, num_classes):
+    P = np.eye(num_classes)
+
+    if noise_rate > 0.0:
+        # 0 -> 1
+        P[0, 0], P[0, 1] = 1. - noise_rate, noise_rate
+        for i in range(1, num_classes-1):
+            P[i, i], P[i, i + 1] = 1. - noise_rate, noise_rate
+        P[num_classes - 1, num_classes - 1], P[num_classes - 1, 0] = 1. - noise_rate, noise_rate
+ 
+        noisy_targets = multiclass_noisify(targets, P=P, seed=seed)
+        actual_noise = (np.array(noisy_targets).flatten() != np.array(targets).flatten()).mean()
+        assert actual_noise > 0.0
+    return np.array(noisy_targets).flatten(), actual_noise
+        
 def multiclass_symmetric_noisify(targets, noise_rate, seed, num_classes):
     P = np.ones((num_classes, num_classes))
     P *= (noise_rate / (num_classes - 1)) 
@@ -73,6 +76,180 @@ def multiclass_symmetric_noisify(targets, noise_rate, seed, num_classes):
         assert actual_noise > 0.0
     return np.array(noisy_targets).flatten(), actual_noise
 
+# split data suited to a federated learning
+def split_data(args, raw_train):
+    """Split data indices using labels.
+    
+    Args:
+        args (argparser): arguments
+        raw_train (dataset): raw dataset object to parse 
+        
+    Returns:
+        split_map (dict): dictionary with key is a client index (~args.K) and a corresponding value is a list of indice array
+    """
+    # IID split (i.e., statistical homogeneity)
+    if args.split_type == 'iid':
+        # randomly shuffle label indices
+        shuffled_indices = np.random.permutation(len(raw_train))
+        
+        # split shuffled indices by the number of clients
+        split_indices = np.array_split(shuffled_indices, args.K)
+        
+        # construct a hashmap
+        split_map = {i: split_indices[i] for i in range(args.K)}
+        return split_map
+    # Non-IID split proposed in McMahan et al., 2016 (i.e., each client has samples from at least two different classes)
+    elif args.split_type == 'pathological':
+        assert args.dataset in ['MNIST', 'CIFAR10'], '[ERROR] `pathological non-IID setting` is supported only for `MNIST` or `CIFAR10` dataset!'
+        assert len(raw_train) / args.shard_size / args.K == 2, '[ERROR] each client should have samples from class at least 2 different classes!'
+        
+        # sort data by labels
+        sorted_indices = np.argsort(np.array(raw_train.targets))
+        shard_indices = np.array_split(sorted_indices, len(raw_train) // args.shard_size)
+
+        # sort the list to conveniently assign samples to each clients from at least two~ classes
+        split_indices = [[] for _ in range(args.K)]
+        
+        # retrieve each shard in order to each client
+        for idx, shard in enumerate(shard_indices):
+            split_indices[idx % args.K].extend(shard)
+        
+        # construct a hashmap
+        split_map = {i: split_indices[i] for i in range(args.K)}
+        return split_map
+    # Non-IID split proposed in Hsu et al., 2019 (i.e., using Dirichlet distribution to simulate non-IID split)
+    # https://github.com/QinbinLi/FedKT/blob/0bb9a89ea266c057990a4a326b586ed3d2fb2df8/experiments.py
+    elif args.split_type == 'dirichlet':
+        # container
+        client_indices_list = [[] for _ in range(args.K)]
+
+        # iterate through all classes
+        for c in range(args.num_classes):
+            # get corresponding class indices
+            target_class_indices = np.where(np.array(raw_train.targets) == c)[0]
+
+            # shuffle class indices
+            np.random.seed(args.global_seed); np.random.shuffle(target_class_indices)
+
+            # get label retrieval probability per each client based on a Dirichlet distribution
+            proportions = np.random.dirichlet(np.repeat(args.alpha, args.K))
+            proportions = np.array([p * (len(idx) < len(raw_train) / args.K) for p, idx in zip(proportions, client_indices_list)])
+
+            # normalize
+            proportions = proportions / proportions.sum()
+            proportions = (np.cumsum(proportions) * len(target_class_indices)).astype(int)[:-1]
+
+            # split class indices by proportions
+            idx_split = np.array_split(target_class_indices, proportions)
+            client_indices_list = [j + idx.tolist() for j, idx in zip(client_indices_list, idx_split)]
+
+            # check minimal size
+            min_size = min([len(indices) for indices in client_indices_list])
+            min_size = min(min_size, min([len(idx) for idx in idx_split]))
+
+        # shuffle finally
+        for j in range(args.K):
+            np.random.seed(args.global_seed); np.random.shuffle(client_indices_list[j])
+        
+        # construct a hashmap
+        split_map = dict(zip([i for i in range(args.K)], client_indices_list))
+        split_map = {k: v for k, v in split_map.items() if len(v) > 0}
+        return split_map
+    # LEAF benchmark dataset
+    elif args.split_type == 'realistic':
+        return print('[INFO] No need to split... use LEAF parser directly!')
+
+# construct a client dataset (training & test set)
+def get_dataset(args):
+    """
+    Retrieve requested datasets.
+    
+    Args:
+        args (argparser): arguments
+        
+    Returns:
+        metadata: {0: [indices_1], 1: [indices_2], ... , K: [indices_K]}
+        global_testset: (optional) test set located at the central server, 
+        client datasets: [tuple(local_training_set[indices_1], local_test_set[indices_1]), tuple(local_training_set[indices_2], local_test_set[indices_2]), ...]
+    """
+    client_datasets = []
+    if args.dataset in ['MNIST', 'CIFAR10', 'CIFAR100']:
+        # call raw datasets
+        raw_train = torchvision.datasets.__dict__[args.dataset](root=args.data_path, train=True, transform=torchvision.transforms.ToTensor(), download=True)
+        raw_test = torchvision.datasets.__dict__[args.dataset](root=args.data_path, train=False, transform=torchvision.transforms.ToTensor(), download=True)
+        
+        # get split indices
+        split_map = split_data(args, raw_train)
+        
+        if args.dataset == 'MNIST':
+            # construct client datasets
+            def construct_mnist(indices):
+                if args.label_noise:
+                    return (
+                        NoisyMNISTDataset(args, indices=indices[:int(len(indices) * (1. - args.test_fraction))], train=True, transform=torchvision.transforms.ToTensor()),
+                        MNISTDataset(args, indices=indices[int(len(indices) * (1. - args.test_fraction)):], train=True, transform=torchvision.transforms.ToTensor())
+                    )
+                else:
+                    return (
+                        MNISTDataset(args, indices=indices[:int(len(indices) * (1. - args.test_fraction))], train=True, transform=torchvision.transforms.ToTensor()),
+                        MNISTDataset(args, indices=indices[int(len(indices) * (1. - args.test_fraction)):], train=True, transform=torchvision.transforms.ToTensor())
+                    )
+            client_datasets = Parallel(n_jobs=4, prefer='threads')(delayed(construct_mnist)(indices) for _, indices in tqdm(split_map.items()))
+                
+            # construct server datasets
+            server_testset = MNISTDataset(args, train=False, transform=torchvision.transforms.ToTensor())
+            split_map = {k: len(v) for k, v in split_map.items()}
+            return split_map, server_testset, client_datasets
+        
+        elif args.dataset in ['CIFAR10', 'CIFAR100']:
+            # construct client datasets
+            def construct_cifar(indices):
+                if args.label_noise:
+                    return (
+                        NoisyCIFARDataset(args, indices=indices[:int(len(indices) * (1. - args.test_fraction))], train=True, transform=torchvision.transforms.ToTensor()),
+                        CIFARDataset(args, indices=indices[int(len(indices) * (1. - args.test_fraction)):], train=True, transform=torchvision.transforms.ToTensor())
+                    )
+                else:
+                    return (
+                        CIFARDataset(args, indices=indices[:int(len(indices) * (1. - args.test_fraction))], train=True, transform=torchvision.transforms.ToTensor()),
+                        CIFARDataset(args, indices=indices[int(len(indices) * (1. - args.test_fraction)):], train=True, transform=torchvision.transforms.ToTensor())
+                    )
+            client_datasets = Parallel(n_jobs=4, prefer='threads')(delayed(construct_cifar)(indices) for _, indices in tqdm(split_map.items()))
+
+            # construct server datasets
+            server_testset = CIFARDataset(args, train=False, transform=torchvision.transforms.ToTensor())
+            split_map = {k: len(v) for k, v in split_map.items()}
+            return split_map, server_testset, client_datasets
+        
+    elif args.dataset == 'TinyImageNet':
+        # call raw dataset
+        raw_train = TinyImageNet(root=args.data_path, split='train', transform=torchvision.transforms.ToTensor(), download=True)
+        raw_test = TinyImageNet(root=args.data_path, split='val', transform=torchvision.transforms.ToTensor(), download=True)
+        
+        # get split indices
+        split_map = split_data(args, raw_train)
+        
+        # construct client datasets
+        def construct_tinyimagenet(indices):
+            return (
+                TinyImageNetDataset(args, indices=indices[:int(len(indices) * (1. - args.test_fraction))], train=True, transform=torchvision.transforms.ToTensor()),
+                TinyImageNetDataset(args, indices=indices[int(len(indices) * (1. - args.test_fraction)):], train=True, transform=torchvision.transforms.ToTensor())
+            )
+        client_datasets = Parallel(n_jobs=4, prefer='threads')(delayed(construct_tinyimagenet)(indices) for _, indices in tqdm(split_map.items()))
+
+        # construct server datasets
+        server_testset = TinyImageNetDataset(args, train=False, transform=torchvision.transforms.ToTensor())
+        return split_map, server_testset, client_datasets
+    
+    elif args.dataset in ['FEMNIST', 'Shakespeare']:
+        assert args.split_type == 'realistic', '[ERROR] LEAF benchmark dataset is only supported for `realistic` split scenario!'
+        
+        # parse dataset
+        parser = LEAFParser(args)
+        
+        # construct client datasets
+        split_map, client_datasets = parser.get_datasets()
+        return split_map, None, client_datasets
 
 
 ###################
@@ -156,10 +333,7 @@ def initiate_model(model, args):
     
     Returns:
         model: (nn.Module) initiated instance
-    """
-    # initialize model
-    model = init_weights(model, args.init_type, args.init_gain, args.init_seed)
-    
+    """    
     # GPU setting
     if 'cuda' in args.device:
         if torch.cuda.device_count() > 1:
@@ -174,616 +348,12 @@ def initiate_model(model, args):
 
 
 
-################
-# TinyImageNet #
-################
-def normalize_tin_val_folder_structure(path, images_folder='images', annotations_file='val_annotations.txt'):
-    # Check if files/annotations are still there to see
-    # if we already run reorganize the folder structure.
-    images_folder = os.path.join(path, images_folder)
-    annotations_file = os.path.join(path, annotations_file)
 
-    # Exists
-    if not os.path.exists(images_folder) \
-       and not os.path.exists(annotations_file):
-        if not os.listdir(path):
-            raise RuntimeError('Validation folder is empty.')
-        return
-
-    # Parse the annotations
-    with open(annotations_file) as f:
-        for line in f:
-            values = line.split()
-            img = values[0]
-            label = values[1]
-            img_file = os.path.join(images_folder, values[0])
-            label_folder = os.path.join(path, label)
-            os.makedirs(label_folder, exist_ok=True)
-            try:
-                shutil.move(img_file, os.path.join(label_folder, img))
-            except FileNotFoundError:
-                continue
-                
-    os.sync()
-    assert not os.listdir(images_folder)
-    shutil.rmtree(images_folder)
-    os.remove(annotations_file)
-    os.sync()
-
-
-class TinyImageNet(ImageFolder):
-    """Dataset for TinyImageNet-200"""
-    base_folder = 'tiny-imagenet-200'
-    zip_md5 = '90528d7ca1a48142e341f4ef8d21d0de'
-    splits = ('train', 'val')
-    filename = 'tiny-imagenet-200.zip'
-    url = 'http://cs231n.stanford.edu/tiny-imagenet-200.zip'
-
-    def __init__(self, root, split='train', download=False, **kwargs):
-        self.data_root = os.path.expanduser(root)
-        self.split = verify_str_arg(split, "split", self.splits)
-
-        if download:
-            self.download()
-
-        if not self._check_exists():
-            raise RuntimeError('Dataset not found.' +
-                               ' You can use download=True to download it')
-        super().__init__(self.split_folder, **kwargs)
-        
-    @property
-    def dataset_folder(self):
-        return os.path.join(self.data_root, self.base_folder)
-
-    @property
-    def split_folder(self):
-        return os.path.join(self.dataset_folder, self.split)
-
-    def _check_exists(self):
-        return os.path.exists(self.split_folder)
-
-    def extra_repr(self):
-        return "Split: {split}".format(**self.__dict__)
-
-    def download(self):
-        if self._check_exists():
-            return
-        download_and_extract_archive(
-            self.url, self.data_root, filename=self.filename,
-            remove_finished=True, md5=self.zip_md5)
-        assert 'val' in self.splits
-        normalize_tin_val_folder_structure(
-            os.path.join(self.dataset_folder, 'val'))
-
-
-#################
-# Dataset split #
-#################
-class CustomTensorDataset(Dataset):
-    """TensorDataset with support of transforms."""
-    def __init__(self, tensors, transform=None):
-        assert all(tensors[0].size(0) == tensor.size(0) for tensor in tensors)
-        self.tensors = tensors
-        self.transform = transform
-
-    def __getitem__(self, index):
-        x = self.tensors[0][index]
-        y = self.tensors[1][index]
-        if self.transform:
-            x = self.transform(x.numpy().astype(np.uint8))
-        return x, y
-
-    def __len__(self):
-        return self.tensors[0].size(0)
-    
-def create_datasets(data_path, dataset_name, num_clients, num_shards, iid):
-    """Split the whole dataset in IID or non-IID manner for distributing to clients."""
-    # get dataset from torchvision.datasets if exists
-    if hasattr(datasets, dataset_name):
-        # set transformation differently per dataset
-        if dataset_name in ["CIFAR10", "CIFAR100", "MNIST", "KMNIST"]:
-            transform = transforms.ToTensor()
-        
-            # prepare raw training & test datasets
-            training_dataset = datasets.__dict__[dataset_name](
-                root=data_path,
-                train=True,
-                download=True,
-                transform=transform
-            )
-            test_dataset = datasets.__dict__[dataset_name](
-                root=data_path,
-                train=False,
-                download=True,
-                transform=transform
-            )
-        elif dataset_name in ["EMNIST"]:
-            transform = transforms.ToTensor()
-        
-            # prepare raw training & test datasets
-            training_dataset = datasets.__dict__[dataset_name](
-                root=data_path,
-                train=True,
-                download=True,
-                transform=transform,
-                split='byclass'
-            )
-            test_dataset = datasets.__dict__[dataset_name](
-                root=data_path,
-                train=False,
-                download=True,
-                transform=transform,
-                split='byclass'
-            )
-    else:
-        if dataset_name == "TinyImageNet":
-            # set transformation
-            transform = transforms.ToTensor()
-
-            # prepare raw training & test datasets
-            training_dataset = TinyImageNet(
-                    root=data_path,
-                    split='train',
-                    download=True,
-                    transform=transform
-                )
-            test_dataset = TinyImageNet(
-                    root=data_path,
-                    split='val',
-                    download=True,
-                    transform=transform
-            )
-        else:
-            # dataset not found exception
-            error_message = f"...dataset \"{dataset_name}\" is not supported or cannot be found!"
-            logging.error(error_message)
-            raise AttributeError(error_message)
-
-    # split dataset according to iid flag
-    if dataset_name in ["MNIST", "KMNIST", "CIFAR10", "CIFAR100"]:
-        # unsqueeze channel dimension for grayscale image datasets
-        if training_dataset.data.ndim == 3: # convert to NxHxW -> NxHxWx1
-            training_dataset.data.unsqueeze_(3)
-        num_categories = np.unique(training_dataset.targets).shape[0]
-        
-        # sanity check
-        if "ndarray" not in str(type(training_dataset.data)):
-            training_dataset.data = np.asarray(training_dataset.data)
-        if "list" not in str(type(training_dataset.targets)):
-            training_dataset.targets = training_dataset.targets.tolist()
-        
-        ## split scenario!
-        if iid:
-            # shuffle data
-            shuffled_indices = torch.randperm(len(training_dataset))
-            training_inputs = training_dataset.data[shuffled_indices]
-            training_labels = torch.Tensor(training_dataset.targets)[shuffled_indices]
-
-            # partition data into num_clients
-            split_size = len(training_dataset) // num_clients
-            split_datasets = list(
-                zip(
-                    torch.split(torch.Tensor(training_inputs), split_size),
-                    torch.split(torch.Tensor(training_labels), split_size)
-                )
-            )
-
-            # finalize bunches of local datasets
-            local_datasets = [
-                CustomTensorDataset(local_dataset, transform=transform)
-                for local_dataset in split_datasets
-                ]
-        else:
-            # sort data by labels
-            sorted_indices = torch.argsort(torch.Tensor(training_dataset.targets))
-            training_inputs = training_dataset.data[sorted_indices]
-            training_labels = torch.Tensor(training_dataset.targets)[sorted_indices]
-
-            # partition data into shards first
-            shard_size = len(training_dataset) // num_shards #300
-            split_datasets = list(
-                zip(
-                    torch.split(torch.Tensor(training_inputs), shard_size),
-                    torch.split(torch.Tensor(training_labels), shard_size)
-                )
-            )
-
-            # store temoporary dataset object for storing shards into a list
-            shard_datasets = [
-                CustomTensorDataset(local_dataset, transform=transform)
-                for local_dataset in split_datasets]
-
-            # sort the list to conveniently assign samples to each clients from at least two~ classes
-            shard_sorted = []
-            for i in range(num_shards // num_categories):
-                for j in range(0, ((num_shards // num_categories) * num_categories), (num_shards // num_categories)):
-                    shard_sorted.append(shard_datasets[i + j])
-
-            # finalize local datasets by assigning shards to each client
-            shards_per_clients = num_shards // num_clients
-            local_datasets = [
-                ConcatDataset(shard_sorted[i:i + shards_per_clients]) 
-                for i in range(0, len(shard_sorted), shards_per_clients)
-                ]
-    elif dataset_name == "EMNIST":
-        # unsqueeze channel dimension for grayscale image datasets
-        if training_dataset.data.ndim == 3: # convert to NxHxW -> NxHxWx1
-            training_dataset.data.unsqueeze_(3)
-        num_categories = np.unique(training_dataset.targets).shape[0]
-        
-        # sanity check
-        if "ndarray" not in str(type(training_dataset.data)):
-            training_dataset.data = np.asarray(training_dataset.data)
-        if "list" not in str(type(training_dataset.targets)):
-            training_dataset.targets = training_dataset.targets.tolist()
-        
-        ## split scenario!
-        if iid:
-            # argument `num_shards` is ignored in this block...
-            # shuffle data
-            shuffled_indices = torch.randperm(len(training_dataset))
-            training_inputs = training_dataset.data[shuffled_indices]
-            training_labels = torch.Tensor(training_dataset.targets)[shuffled_indices]
-
-            # partition data into num_clients
-            split_size = len(training_dataset) // num_clients
-            split_datasets = list(
-                zip(
-                    torch.split(torch.Tensor(training_inputs), split_size),
-                    torch.split(torch.Tensor(training_labels), split_size)
-                )
-            )
-
-            # finalize bunches of local datasets
-            local_datasets = [
-                CustomTensorDataset(local_dataset, transform=transform)
-                for local_dataset in split_datasets
-                ]
-        else:
-            # argument `num_clients` and `num_shards` are ignored in this block...
-            """
-            As a result, 1543 clients are generated:
-            - avg. sample size: 452.31
-            - std. sample size: 203.24
-            """ 
-            # randomly shuffle and split labels into 5 groups by its semantic 
-            digit_labels = list(torch.split(torch.randperm(10), 2))
-            uppercase_labels = list(torch.split(torch.randperm(26) + 10, 5))
-            lowercase_labels = list(torch.split(torch.randperm(26) + 36, 5))
-            
-            lowercase_labels[-2] = torch.cat((lowercase_labels[-2], lowercase_labels[-1]))
-            del lowercase_labels[-1]
-            
-            uppercase_labels[-2] = torch.cat((uppercase_labels[-2], uppercase_labels[-1]))
-            del uppercase_labels[-1]
-            
-            # make label groups
-            groups = []
-            for d, l, u in zip(digit_labels, lowercase_labels, uppercase_labels):
-                groups.append(torch.cat((d, l, u)))
-            del digit_labels, lowercase_labels, uppercase_labels
-            gc.collect()
-            
-            # make latent component indices by labels
-            indices = []
-            for group in groups:
-                indices.append(
-                    (torch.Tensor(training_dataset.targets)[..., None] == group).any(-1).nonzero().squeeze()
-                )
-            del groups
-            gc.collect()
-            
-            # split dataset by indices
-            input_sets, target_sets = [], []
-            for idx in indices:
-                input_sets.append(
-                    torch.Tensor(training_dataset.data)[idx]
-                )
-                target_sets.append(
-                    torch.Tensor(training_dataset.targets)[idx]
-                )
-            del indices
-            gc.collect()
-
-            # create clients by randomly splitting each dset
-            local_datasets = []
-            for ds, ts in zip(input_sets, target_sets):
-                remaining_size = 1e5
-                dset_to_split = CustomTensorDataset((ds, ts), transform=transform)
-                while remaining_size > 100:
-                    size = torch.randint(low=100, high=800, size=(1,)).item()
-                    remaining_size = len(ds) - size
-                    if remaining_size < 0:
-                        break
-                    split_dset, remaining_dset = torch.utils.data.random_split(
-                        dset_to_split,
-                        [size, remaining_size]
-                        
-                    )
-                    local_datasets.append(split_dset)
-                    dset_to_split = remaining_dset
-                    ds = remaining_dset
-            
-            del input_sets, target_sets
-            gc.collect()
-    elif dataset_name == "TinyImageNet":
-        ## split scenario!
-        if iid:
-            raise NotImplementedError("...this will be implemented in later version!")
-        else:
-            # argument `num_clients` and `num_shards` are ignored in this block...
-            """
-            As a result, 390 clients are generated:
-            - avg. sample size: 251.98
-            - std. sample size: 87.56
-            """ 
-            # initialize label index: files are stored in the increasing order with the same size (500 images * 200 classes)
-            label_indices = torch.split(
-                torch.arange(len(training_dataset)),
-                500
-            )
-            label_indices = torch.stack(list(label_indices), dim=0)
-            
-            # shuffle labels
-            label_indices = label_indices[torch.randperm(len(label_indices)), :]
-            
-            # make each client has images from at most 20 classes: 10 groups are generated
-            split_indices = torch.stack(list(torch.split(label_indices, 20)), dim=0)
-            del label_indices
-            gc.collect()
-
-            # for each group, randomly split into clients
-            final_indices = []
-            for group in split_indices:
-                # mix internally
-                mixed_group = group.flatten()[torch.randperm(len(group.flatten()))]
-                while len(mixed_group) > 100:
-                    size = torch.randint(low=100, high=400, size=(1,)).item()
-                    remaining_size = len(mixed_group) - size
-                    if remaining_size < 0:
-                        break
-                    split_group, remaining_group = torch.split(
-                        mixed_group,
-                        [size, remaining_size]
-                    )
-                    final_indices.append(split_group)
-                    mixed_group = remaining_group
-            del split_indices
-            gc.collect()
-                
-            # split dataset by indices
-            local_datasets = []
-            for indices in final_indices:
-                #print(indices)
-                local_datasets.append(
-                    Subset(training_dataset, indices=indices)
-                )
-            
-    return local_datasets, test_dataset
-
-def split_data(args):
-    if args.dataset in ['MNIST', 'EMNIST', 'CIFAR10', 'CIFAR100']:
-        X_train, y_train, X_test, y_test = load_mnist_data(datadir)
-    elif dataset == 'fmnist':
-        X_train, y_train, X_test, y_test = load_fmnist_data(datadir)
-    elif dataset == 'cifar10':
-        X_train, y_train, X_test, y_test = load_cifar10_data(datadir)
-    elif dataset == 'svhn':
-        X_train, y_train, X_test, y_test = load_svhn_data(datadir)
-    elif dataset == 'celeba':
-        X_train, y_train, X_test, y_test = load_celeba_data(datadir)
-    elif dataset == 'femnist':
-        X_train, y_train, u_train, X_test, y_test, u_test = load_femnist_data(datadir)
-    elif dataset == 'generated':
-        X_train, y_train = [], []
-        for loc in range(4):
-            for i in range(1000):
-                p1 = random.random()
-                p2 = random.random()
-                p3 = random.random()
-                if loc > 1:
-                    p2 = -p2
-                if loc % 2 ==1:
-                    p3 = -p3
-                if i % 2 == 0:
-                    X_train.append([p1, p2, p3])
-                    y_train.append(0)
-                else:
-                    X_train.append([-p1, -p2, -p3])
-                    y_train.append(1)
-        X_test, y_test = [], []
-        for i in range(1000):
-            p1 = random.random() * 2 - 1
-            p2 = random.random() * 2 - 1
-            p3 = random.random() * 2 - 1
-            X_test.append([p1, p2, p3])
-            if p1>0:
-                y_test.append(0)
-            else:
-                y_test.append(1)
-        X_train = np.array(X_train, dtype=np.float32)
-        X_test = np.array(X_test, dtype=np.float32)
-        y_train = np.array(y_train, dtype=np.int32)
-        y_test = np.array(y_test, dtype=np.int64)
-        idxs = np.linspace(0,3999,4000,dtype=np.int64)
-        batch_idxs = np.array_split(idxs, n_parties)
-        net_dataidx_map = {i: batch_idxs[i] for i in range(n_parties)}
-        mkdirs("data/generated/")
-        np.save("data/generated/X_train.npy",X_train)
-        np.save("data/generated/X_test.npy",X_test)
-        np.save("data/generated/y_train.npy",y_train)
-        np.save("data/generated/y_test.npy",y_test)
-
-    n_train = y_train.shape[0]
-
-    if partition == "homo":
-        idxs = np.random.permutation(n_train)
-        batch_idxs = np.array_split(idxs, n_parties)
-        net_dataidx_map = {i: batch_idxs[i] for i in range(n_parties)}
-
-
-    elif partition == "noniid-labeldir":
-        min_size = 0
-        min_require_size = 10
-        K = 10
-        if dataset in ('celeba', 'covtype', 'a9a', 'rcv1', 'SUSY'):
-            K = 2
-            # min_require_size = 100
-
-        N = y_train.shape[0]
-        np.random.seed(2020)
-        net_dataidx_map = {}
-
-        while min_size < min_require_size:
-            idx_batch = [[] for _ in range(n_parties)]
-            for k in range(K):
-                idx_k = np.where(y_train == k)[0]
-                np.random.shuffle(idx_k)
-                proportions = np.random.dirichlet(np.repeat(beta, n_parties))
-                # logger.info("proportions1: ", proportions)
-                # logger.info("sum pro1:", np.sum(proportions))
-                ## Balance
-                proportions = np.array([p * (len(idx_j) < N / n_parties) for p, idx_j in zip(proportions, idx_batch)])
-                # logger.info("proportions2: ", proportions)
-                proportions = proportions / proportions.sum()
-                # logger.info("proportions3: ", proportions)
-                proportions = (np.cumsum(proportions) * len(idx_k)).astype(int)[:-1]
-                # logger.info("proportions4: ", proportions)
-                idx_batch = [idx_j + idx.tolist() for idx_j, idx in zip(idx_batch, np.split(idx_k, proportions))]
-                min_size = min([len(idx_j) for idx_j in idx_batch])
-                # if K == 2 and n_parties <= 10:
-                #     if np.min(proportions) < 200:
-                #         min_size = 0
-                #         break
-
-
-        for j in range(n_parties):
-            np.random.shuffle(idx_batch[j])
-            net_dataidx_map[j] = idx_batch[j]
-
-    elif partition > "noniid-#label0" and partition <= "noniid-#label9":
-        num = eval(partition[13:])
-        if dataset in ('celeba', 'covtype', 'a9a', 'rcv1', 'SUSY'):
-            num = 1
-            K = 2
-        else:
-            K = 10
-        if num == 10:
-            net_dataidx_map ={i:np.ndarray(0,dtype=np.int64) for i in range(n_parties)}
-            for i in range(10):
-                idx_k = np.where(y_train==i)[0]
-                np.random.shuffle(idx_k)
-                split = np.array_split(idx_k,n_parties)
-                for j in range(n_parties):
-                    net_dataidx_map[j]=np.append(net_dataidx_map[j],split[j])
-        else:
-            times=[0 for i in range(10)]
-            contain=[]
-            for i in range(n_parties):
-                current=[i%K]
-                times[i%K]+=1
-                j=1
-                while (j<num):
-                    ind=random.randint(0,K-1)
-                    if (ind not in current):
-                        j=j+1
-                        current.append(ind)
-                        times[ind]+=1
-                contain.append(current)
-            net_dataidx_map ={i:np.ndarray(0,dtype=np.int64) for i in range(n_parties)}
-            for i in range(K):
-                idx_k = np.where(y_train==i)[0]
-                np.random.shuffle(idx_k)
-                split = np.array_split(idx_k,times[i])
-                ids=0
-                for j in range(n_parties):
-                    if i in contain[j]:
-                        net_dataidx_map[j]=np.append(net_dataidx_map[j],split[ids])
-                        ids+=1
-
-    elif partition == "iid-diff-quantity":
-        idxs = np.random.permutation(n_train)
-        min_size = 0
-        while min_size < 10:
-            proportions = np.random.dirichlet(np.repeat(beta, n_parties))
-            proportions = proportions/proportions.sum()
-            min_size = np.min(proportions*len(idxs))
-        proportions = (np.cumsum(proportions)*len(idxs)).astype(int)[:-1]
-        batch_idxs = np.split(idxs,proportions)
-        net_dataidx_map = {i: batch_idxs[i] for i in range(n_parties)}
-        
-    elif partition == "mixed":
-        min_size = 0
-        min_require_size = 10
-        K = 10
-        if dataset in ('celeba', 'covtype', 'a9a', 'rcv1', 'SUSY'):
-            K = 2
-            # min_require_size = 100
-
-        N = y_train.shape[0]
-        net_dataidx_map = {}
-
-        times=[1 for i in range(10)]
-        contain=[]
-        for i in range(n_parties):
-            current=[i%K]
-            j=1
-            while (j<2):
-                ind=random.randint(0,K-1)
-                if (ind not in current and times[ind]<2):
-                    j=j+1
-                    current.append(ind)
-                    times[ind]+=1
-            contain.append(current)
-        net_dataidx_map ={i:np.ndarray(0,dtype=np.int64) for i in range(n_parties)}
-        
-
-        min_size = 0
-        while min_size < 10:
-            proportions = np.random.dirichlet(np.repeat(beta, n_parties))
-            proportions = proportions/proportions.sum()
-            min_size = np.min(proportions*n_train)
-
-        for i in range(K):
-            idx_k = np.where(y_train==i)[0]
-            np.random.shuffle(idx_k)
-
-            proportions_k = np.random.dirichlet(np.repeat(beta, 2))
-            #proportions_k = np.ndarray(0,dtype=np.float64)
-            #for j in range(n_parties):
-            #    if i in contain[j]:
-            #        proportions_k=np.append(proportions_k ,proportions[j])
-
-            proportions_k = (np.cumsum(proportions_k)*len(idx_k)).astype(int)[:-1]
-
-            split = np.split(idx_k, proportions_k)
-            ids=0
-            for j in range(n_parties):
-                if i in contain[j]:
-                    net_dataidx_map[j]=np.append(net_dataidx_map[j],split[ids])
-                    ids+=1
-
-    elif partition == "real" and dataset == "femnist":
-        num_user = u_train.shape[0]
-        user = np.zeros(num_user+1,dtype=np.int32)
-        for i in range(1,num_user+1):
-            user[i] = user[i-1] + u_train[i-1]
-        no = np.random.permutation(num_user)
-        batch_idxs = np.array_split(no, n_parties)
-        net_dataidx_map = {i:np.zeros(0,dtype=np.int32) for i in range(n_parties)}
-        for i in range(n_parties):
-            for j in batch_idxs[i]:
-                net_dataidx_map[i]=np.append(net_dataidx_map[i], np.arange(user[j], user[j+1]))
-
-    traindata_cls_counts = record_net_data_stats(y_train, net_dataidx_map, logdir)
-    return (X_train, y_train, X_test, y_test, net_dataidx_map, traindata_cls_counts)
-
-
-
-##############################
-# top K accuracy calculation #
-##############################
-def accuracy(output, target, topk=(1,)):
+###########
+# Metrics #
+###########
+# top-k accuracy
+def get_accuracy(output, target, topk=(1, 5)):
     """
     Computes the accuracy over the k top predictions for the specified values of k
     In top-5 accuracy you give yourself credit for having the right answer
@@ -839,10 +409,8 @@ def accuracy(output, target, topk=(1,)):
             list_topk_accs.append(topk_acc.detach().cpu())
         return torch.stack(list_topk_accs)  # list of topk accuracies for entire batch [topk1, topk2, ... etc]
 
-##############################
-# Expected Calibration Error #
-##############################
-class ECELoss(nn.Module):
+# exepcted calibration error
+class ECELoss(torch.nn.Module):
     """
     Credits to: https://github.com/gpleiss/temperature_scaling/blob/master/temperature_scaling.py
     Calculates the Expected Calibration Error of a model.

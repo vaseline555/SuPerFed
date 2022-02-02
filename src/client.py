@@ -1,71 +1,77 @@
 import gc
-import pickle
 import logging
 import copy
 import numpy as np
-import pdb
 
 import torch
 import torch.nn as nn
 
 from torch.utils.data import DataLoader
-from .utils import *
+from utils import init_weights
 logger = logging.getLogger(__name__)
 
 
 class Client(object):
     """Class for client object having its own (private) data and resources to train a model.
-
-    Participating client has its own dataset which are usually non-IID compared to other clients.
-    Each client only communicates with the center server with its trained parameters or globally aggregated parameters.
-
-    Attributes:
-        id: Integer indicating client's id.
-        data: torch.utils.data.Dataset instance containing local data.
-        device: Training machine indicator (e.g. "cpu", "cuda").
-        __model: torch.nn.Module instance as a local model.
     """
-    def __init__(self, client_id, local_data, device):
-        """Client object is initiated by the center server."""
-        self.id = client_id
-        self.data = local_data
+    def __init__(self, args, client_id, training_set, test_set, device):
+        # default attributes
+        self.args = args
+        self.client_id = client_id
         self.device = device
-        self.__model = None
-        self.global_model = None
+        
+        # dataset
+        self.training_set = training_set
+        self.test_set = test_set
+        
+        # model related attributes
+        self._model = None
+        self._optimizer = None
+        self._criterion = None
+        
+        # training related attributes
+        self.local_epoch = args.E
+        self.batch_size = args.B
+        self.mu = args.mu # proximity regularization
+        self.nu = args.nu # connectivity regularization
+        self.lr = args.lr
+        self.lr_decay = args.lr_decay
         
     @property
     def model(self):
-        """Local model getter for parameter aggregation."""
-        return self.__model
+        return self._model
 
     @model.setter
     def model(self, model):
-        """Local model setter for passing globally aggregated model parameters."""
-        self.__model = model
-
-    def __len__(self):
-        """Return a total size of the client's local data."""
-        return len(self.data)
-
-    def setup(self, **client_config):
-        """Set up common configuration of each client; called by center server."""
-        self.local_epoch = client_config["num_local_epochs"]
-        self.optim_config = client_config["optim_config"]
-        self.batch_size = client_config["batch_size"]
-        self.criterion = client_config["criterion"]
-        self.optimizer = client_config["optimizer"]
-        self.mu = client_config["mu"]
-        self.beta = client_config["beta"]
+        self._model = model
         
-        training_length = int(len(self.data) * 0.8)
-        test_length = len(self.data) - training_length
-        
-        self.training_data, self.test_data = torch.utils.data.random_split(self.data, [training_length, test_length])
-        self.training_dataloader = DataLoader(self.training_data, batch_size=self.batch_size, shuffle=True, drop_last=True)
-        self.test_dataloader = DataLoader(self.test_data, batch_size=self.batch_size, shuffle=False, drop_last=True)
+    @property
+    def optimizer(self):
+        return self._optimizer
+
+    @optimizer.setter
+    def optimizer(self, optimizer):
+        self._optimizer = optimizer
     
+    @property
+    def criterion(self):
+        return self._criterion
+
+    @criterion.setter
+    def optimizer(self, criterion):
+        self._criterion = criterion
+        
+    def initialize_model(self):
+        # initialize model
+        if self.args.algorithm == 'SuPerFed':
+            self._model = init_weights(model, self.args.init_type, self.args.init_gain, [self.args.global_seed, self.client_id])
+        else:
+             self._model = init_weights(model, self.args.init_type, self.args.init_gain, [self.args.global_seed])
+
     def client_update(self, lr, epoch, start_local_training=False):
-        """Update local model using local dataset."""
+        training_dataloader = torch.utils.data.DataLoader(self.training_set, batch_size=self.batch_size, shuffle=True)
+        
+        if self.mu > 0:
         # fix global model for calculating a proximity term
         self.global_model = copy.deepcopy(self.model)
         self.global_model.to(self.device)
@@ -79,7 +85,7 @@ class Client(object):
         
         parameters = list(self.model.named_parameters())
         parameters_to_opimizer = [v for n, v in parameters if v.requires_grad]            
-        optimizer = self.optimizer(parameters_to_opimizer, lr=lr, **self.optim_config)
+        optimizer = self.optimizer(parameters_to_opimizer, lr=lr, momentum=0.9)
 
         flag = False
         if epoch is None:
@@ -135,7 +141,7 @@ class Client(object):
         self.model.eval()
  
     def client_evaluate(self):
-        """Evaluate local model using local dataset (same as training set for convenience)."""
+        self.test_dataloader = DataLoader(self.test_data, batch_size=self.batch_size, shuffle=False, drop_last=True)
         losses, accs, eces = [], [], []
         
         self.model.eval()

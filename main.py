@@ -1,19 +1,18 @@
 import os
 import sys
+import json
 import time
 import torch
 import random
-import pickle
+import logging
 import argparse
 import threading
-import logging
 import numpy as np
 
 from torch.utils.tensorboard import SummaryWriter
 
 from src.server import Server
-from src.utils import launch_tensor_board, initiate_model, split_data
-from src.dataset import get_dataset
+from src.utils import launch_tensor_board, initiate_model, get_dataset
 from src.models.builder import Builder
 from src.models import models
 
@@ -35,18 +34,12 @@ def main(args, writer):
     torch.backends.cudnn.benchmark = False
     
     
-    
     ###################
     # Prepare dataset #
     ###################
     # get dataset
-    dataset = get_dataset(args)
-    
-    # split dataset using labels
-    split_indices, stats = split_data(args)
-    
-
-    
+    split_map, server_testset, client_datasets = get_dataset(args)
+    args.K = len(client_datasets)
     
     
     
@@ -69,17 +62,21 @@ def main(args, writer):
     ##############
     # Run server #
     ##############
-    # initialize federated learning 
-    central_server = Server(args, writer)
+    # create central server
+    central_server = Server(args, writer, model, server_testset, client_datasets)
+    
+    # initialize central server
     central_server.setup()
 
     # do federated learning
-    central_server.fit(args.exp_name)
+    central_server.fit()
 
     # save resulting losses and metrics
-    with open(os.path.join(args.log_path, f"{args.exp_name}.pkl"), "wb") as f:
-        pickle.dump(central_server.results, f)
-
+    with open(os.path.join(args.log_path, f'{args.exp_name}_{args.global_seed}.json'), 'wb') as result_file:
+        arguments = {'arguments': {str(arg): getattr(args, arg) for arg in vars(args)}}
+        sample_stats = {'sample_statistics': split_map}
+        results = {'results': {key: value for key, value in central_server.results.items() if len(value) > 0}}
+        json.dump({**arguments, **sample_stats, **results}, result_file)
 
 if __name__ == "__main__":
     # parse user inputs as arguments
@@ -87,23 +84,28 @@ if __name__ == "__main__":
     
     # default arguments
     parser.add_argument('--exp_name', type=str, help='name of the experiment', required=True)
-    parser.add_argument('--exp_type', help='type of an expriment to conduct', type=str, choices=['iid', 'pathological', 'dirichlet', 'realistic', 'label-noise', 'ood'])
-    parser.add_argument('--algo_type', help='type of an algorithm to use', type=str, choices=['fedavg', 'fedprox', 'lg-fedavg', 'fedper', 'fedrep', 'ditto', 'apfl', 'pfedme', 'superfed-mm', 'superfed-lm'])
-    parser.add_argument('--use_local_tuning', help='use local fine-tuning for a personalization (if passed)', default='store_true')
+    parser.add_argument('--algorithm', help='type of an algorithm to use', type=str, choices=['fedavg', 'fedprox', 'lg-fedavg', 'fedper', 'fedrep', 'ditto', 'apfl', 'pfedme', 'superfed-mm', 'superfed-lm'])
+    #parser.add_argument('--local_tuning', help='use local fine-tuning for a personalization (if positive value passed)', type=int, default=0)
+    parser.add_argument('--label_noise', help='experiment under the simulation of a label noise (if passed)', default='store_true')
+    parser.add_argument('--noise_type', help='type of a label noise: [pair|symmetric]', type=str, choices=['pair', 'symmetric'])
     parser.add_argument('--global_seed', help='global random seed (applied EXCEPT model initiailization)', type=int, default=5959)
     parser.add_argument('--device', help='device to use, either cpu or cuda; default is cpu', type=str, default='cpu', choices=['cpu', 'cuda'])
     parser.add_argument('--data_path', help='data path', type=str, default='./data')
     parser.add_argument('--log_path', help='log path', type=str, default='./log')
+    parser.add_argument('--result_path', help='result path', type=str, default='./result')
     parser.add_argument('--tb_port', help='TensorBoard port number', type=int, default=6006)
     parser.add_argument('--tb_host', help='TensorBoard host address', type=str, default='0.0.0.0')
     
     # dataset related arguments
-    parser.add_argument('--dataset', help='name of dataset to use for an experiment: [MNIST|CIFAR10|FEMNIST|TinyImageNet|Shakespeare|CIFAR100|EMNIST]', type=str, choices=['MNIST', 'CIFAR10', 'FEMNIST', 'TinyImageNet', 'Shakespeare', 'CIFAR100', 'EMNIST'])
+    parser.add_argument('--dataset', help='name of dataset to use for an experiment: [MNIST|CIFAR10|CIFAR100|TinyImageNet|FEMNIST|Shakespeare|]', type=str, choices=['MNIST', 'CIFAR10', 'CIFAR100', 'TinyImageNet', 'FEMNIST', 'Shakespeare'])
     parser.add_argument('--is_small', help='indicates the size of inputs is small (if passed)', default='store_true')
     parser.add_argument('--in_channels', help='input channels for image dataset (ignored when `Shakespeare` dataset is used)', type=int, default=3)
     parser.add_argument('--num_classes', help='number of classes to predict (ignored when `Shakespeare` dataset is used)', type=int, default=10)
-    parser.add_argument('--num_shards', help='how many shards to be assigned for each client ignored if `iid=True` for pathological non-IID setting (MNIST & CIFAR10)', type=int)
-    parser.add_argument('--a', help='shape parameter for a Dirichlet distribution used for splitting data in non-IID manner', type=float, default=0.5)
+    parser.add_argument('--test_fraction', help='fraction of test datset in each client', type=float, default=0.2)
+    parser.add_argument('--noise_rate', help='label noise ratio (0 ~ 1) valid only when `label-noise` argument is passed', type=float, default=0.2)
+    parser.add_argument('--split_type', help='type of an expriment to conduct', type=str, choices=['iid', 'pathological', 'dirichlet', 'realistic'])
+    parser.add_argument('--shard_size', help='size of one shard to be assigned to each client; used only when `algo_type=pathological`', type=int)
+    parser.add_argument('--alpha', help='shape parameter for a Dirichlet distribution used for splitting data in non-IID manner; used only when `algo_type=dirichlet`', type=float, default=0.5)
     
     # federated learning arguments
     parser.add_argument('--C', help='sampling fraction of clietns per each round', type=float, default=0.1)
@@ -115,30 +117,31 @@ if __name__ == "__main__":
     
     # optimization related arguments
     parser.add_argument('--lr', help='learning rate of each client', type=float, default=0.01)
+    parser.add_argument('--lr_decay', help='magnitude of learning rate decay at every round', type=float, default=0.99)
     parser.add_argument('--mu',help='constant for proximity regularization term', type=float, default=1.0)
     parser.add_argument('--nu', help='constant for low-loss subspace construction term', type=float, default=1.0)
-    parser.add_argument('--p_lr', help='learning rate of personalization round per each client', type=float, default=0.01)
-    parser.add_argument('--p_e', help='number of personalization update per each client', type=int, default=1)
     
     # model related arguments
     parser.add_argument('--model_name', help='model to use [TwoNN|TwoCNN|NextCharLSTM|ResNet18|MobileNetv2]', type=str, choices=['TwoNN', 'TwoCNN', 'NextCharLM', 'ResNet18', 'MobileNetv2'])
     parser.add_argument('--init_type', type=str, help='initialization type [normal|xavier|xavier_uniform|kaiming|orthogonal|none]', default='xavier', choices=['xavier', 'normal', 'kaiming', 'xavier_uniform', 'orthogonal', 'none'])
     parser.add_argument('--init_gain', type=float, help='init gain for init type', default=1.0)
-    parser.add_argument('--init_seed', help='init seeds for subspace learning (two different seeds need to be passed)', nargs='+', default=[5959])
     parser.add_argument('--fc_type', help='type of fully connected layer', type=str, choices=['StandardLinear', 'LinesLinear'], default='StandardLinear')
     parser.add_argument('--conv_type', help='type of fully connected layer', type=str, choices=['StandardConv', 'LinesConv'], default='StandardConv')
     parser.add_argument('--bn_type', help='type of fully batch normalization layer', type=str, choices=['StandardBN', 'LinesBN'], default='StandardBN')
     parser.add_argument('--embedding_type', help='type of embedding layer', type=str, choices=['StandardEmbedding', 'LinesEmbedding'], default='StandardEmbedding')
     parser.add_argument('--lstm_type', help='type of LSTM layer', type=str, choices=['StandardLSTM', 'LinesLSTM'], default='StandardLSTM')
     
-    
     # parse arguments
     args = parser.parse_args()
-    
+
     # check if arguments are specified correctly
     if 'Lines' in args.fc_type:
         assert len(args.init_seed) <= 2, '[ERROR] number of `init_seed` should be less than or equal to 2!'
     
+    # make path for saving losses & metrics
+    if not os.path.exists(args.result_path):
+        os.makedirs(os.path.join(args.result_path, f'{args.exp_name}_{args.global_seed}'))
+        
     # define path to save a log
     args.log_path = f'{args.log_path}/{args.dataset}/{args.exp_name}'
 
@@ -160,7 +163,7 @@ if __name__ == "__main__":
     )
     
     # display and log experiment configuration
-    message = "\n[WELCOME] Configurations..."
+    message = '\n[WELCOME] Configurations...'
     print(message); logging.info(message)
     for arg in vars(args):
         print(f'\t *{arg}: {getattr(args, arg)}')
@@ -171,7 +174,7 @@ if __name__ == "__main__":
     main(args, writer)
     
     # bye!
-    message = "[INFO] ...done all learning process!\n[INFO] ...exit program!"
+    message = '[INFO] ...done federated learning!\n[INFO] ...exit program!'
     print(message); logging.info(message)
     time.sleep(3); sys.exit(0)
 
