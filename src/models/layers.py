@@ -27,11 +27,11 @@ class SubspaceConv(nn.Conv2d):
 class TwoParamConv(SubspaceConv):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.weight1 = nn.Parameter(torch.zeros_like(self.weight))
+        self.weight_1 = nn.Parameter(torch.zeros_like(self.weight))
 
 class LinesConv(TwoParamConv):
     def get_weight(self):
-        w = (1 - self.alpha) * self.weight + self.alpha * self.weight1
+        w = (1 - self.alpha) * self.weight + self.alpha * self.weight_1
         return w
 
 # dense layer
@@ -45,11 +45,11 @@ class SubspaceLinear(nn.Linear):
 class TwoParamLinear(SubspaceLinear):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.weight1 = nn.Parameter(torch.zeros_like(self.weight))
+        self.weight_1 = nn.Parameter(torch.zeros_like(self.weight))
 
 class LinesLinear(TwoParamLinear):
     def get_weight(self):
-        w = (1 - self.alpha) * self.weight + self.alpha * self.weight1
+        w = (1 - self.alpha) * self.weight + self.alpha * self.weight_1
         return w
 
 # LSTM layer
@@ -100,16 +100,16 @@ class SubspaceEmbedding(nn.Embedding):
 class TwoParamEmbedding(SubspaceEmbedding):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.weight1 = nn.Parameter(torch.zeros_like(self.weight))
+        self.weight_1 = nn.Parameter(torch.zeros_like(self.weight))
                 
 class LinesEmbedding(TwoParamEmbedding):
     def get_weight(self):
-        w = (1 - self.alpha) * self.weight + self.alpha * self.weight1
+        w = (1 - self.alpha) * self.weight + self.alpha * self.weight_1
         return w
 
 # BatchNorm layer
 class SubspaceBN(nn.BatchNorm2d):
-    def forward(self, input):
+    def forward(self, x):
         # call get_weight, which samples from the subspace, then use the corresponding weight.
         w, b = self.get_weight()
 
@@ -123,19 +123,16 @@ class SubspaceBN(nn.BatchNorm2d):
             if self.num_batches_tracked is not None:
                 self.num_batches_tracked = self.num_batches_tracked + 1
                 if self.momentum is None:  # use cumulative moving average
-                    exponential_average_factor = 1.0 / float(
-                        self.num_batches_tracked
-                    )
+                    exponential_average_factor = 1.0 / float(self.num_batches_tracked)
                 else:  # use exponential moving average
                     exponential_average_factor = self.momentum
+                    
         if self.training:
             bn_training = True
         else:
-            bn_training = (self.running_mean is None) and (
-                self.running_var is None
-            )
+            bn_training = (self.running_mean is None) and (self.running_var is None)
         return F.batch_norm(
-            input,
+            x,
             # If buffers are not to be tracked, ensure that they won't be updated
             self.running_mean
             if not self.training or self.track_running_stats
@@ -153,13 +150,13 @@ class SubspaceBN(nn.BatchNorm2d):
 class TwoParamBN(SubspaceBN):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.weight1 = nn.Parameter(torch.Tensor(self.num_features))
-        self.bias1 = nn.Parameter(torch.Tensor(self.num_features))
+        self.weight_1 = nn.Parameter(torch.Tensor(self.num_features))
+        self.bias_1 = nn.Parameter(torch.Tensor(self.num_features))
         torch.nn.init.ones_(self.weight1)
         torch.nn.init.zeros_(self.bias1)
         
 class LinesBN(TwoParamBN):
     def get_weight(self):
-        w = (1 - self.alpha) * self.weight + self.alpha * self.weight1
-        b = (1 - self.alpha) * self.bias + self.alpha * self.bias1
+        w = (1 - self.alpha) * self.weight + self.alpha * self.weight_1
+        b = (1 - self.alpha) * self.bias + self.alpha * self.bias_1
         return w, b

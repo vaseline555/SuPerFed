@@ -68,7 +68,7 @@ class Client(object):
         else:
              self._model = init_weights(model, self.args.init_type, self.args.init_gain, [self.args.global_seed])
 
-    def client_update(self, lr, epoch, start_local_training=False):
+    def client_update(self, current_round, start_local_training=False):
         training_dataloader = torch.utils.data.DataLoader(self.training_set, batch_size=self.batch_size, shuffle=True)
         
         if self.mu > 0:
@@ -85,7 +85,7 @@ class Client(object):
         
         parameters = list(self.model.named_parameters())
         parameters_to_opimizer = [v for n, v in parameters if v.requires_grad]            
-        optimizer = self.optimizer(parameters_to_opimizer, lr=lr, momentum=0.9)
+        optimizer = self.optimizer(parameters_to_opimizer, lr=self.lr * self.lr_decay**current_round, momentum=0.9)
 
         flag = False
         if epoch is None:

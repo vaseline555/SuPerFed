@@ -84,10 +84,6 @@ if __name__ == "__main__":
     
     # default arguments
     parser.add_argument('--exp_name', type=str, help='name of the experiment', required=True)
-    parser.add_argument('--algorithm', help='type of an algorithm to use', type=str, choices=['fedavg', 'fedprox', 'lg-fedavg', 'fedper', 'fedrep', 'ditto', 'apfl', 'pfedme', 'superfed-mm', 'superfed-lm'])
-    #parser.add_argument('--local_tuning', help='use local fine-tuning for a personalization (if positive value passed)', type=int, default=0)
-    parser.add_argument('--label_noise', help='experiment under the simulation of a label noise (if passed)', default='store_true')
-    parser.add_argument('--noise_type', help='type of a label noise: [pair|symmetric]', type=str, choices=['pair', 'symmetric'])
     parser.add_argument('--global_seed', help='global random seed (applied EXCEPT model initiailization)', type=int, default=5959)
     parser.add_argument('--device', help='device to use, either cpu or cuda; default is cpu', type=str, default='cpu', choices=['cpu', 'cuda'])
     parser.add_argument('--data_path', help='data path', type=str, default='./data')
@@ -101,13 +97,21 @@ if __name__ == "__main__":
     parser.add_argument('--is_small', help='indicates the size of inputs is small (if passed)', default='store_true')
     parser.add_argument('--in_channels', help='input channels for image dataset (ignored when `Shakespeare` dataset is used)', type=int, default=3)
     parser.add_argument('--num_classes', help='number of classes to predict (ignored when `Shakespeare` dataset is used)', type=int, default=10)
-    parser.add_argument('--test_fraction', help='fraction of test datset in each client', type=float, default=0.2)
+    parser.add_argument('--test_fraction', help='fraction of test dataset at each client', type=float, default=0.2)
+    
+    # label noise experiment
+    parser.add_argument('--label_noise', help='experiment under the simulation of a label noise (if passed)', default='store_true')
+    parser.add_argument('--noise_type', help='type of a label noise: [pair|symmetric]', type=str, choices=['pair', 'symmetric'])
     parser.add_argument('--noise_rate', help='label noise ratio (0 ~ 1) valid only when `label-noise` argument is passed', type=float, default=0.2)
+    
+    # dataset split scenario
     parser.add_argument('--split_type', help='type of an expriment to conduct', type=str, choices=['iid', 'pathological', 'dirichlet', 'realistic'])
     parser.add_argument('--shard_size', help='size of one shard to be assigned to each client; used only when `algo_type=pathological`', type=int)
     parser.add_argument('--alpha', help='shape parameter for a Dirichlet distribution used for splitting data in non-IID manner; used only when `algo_type=dirichlet`', type=float, default=0.5)
     
     # federated learning arguments
+    parser.add_argument('--algorithm', help='type of an algorithm to use', type=str, choices=['fedavg', 'fedprox', 'lg-fedavg', 'fedper', 'fedrep', 'ditto', 'apfl', 'pfedme', 'superfed-mm', 'superfed-lm'])
+    #parser.add_argument('--local_tuning', help='use local fine-tuning for a personalization (if positive value passed)', type=int, default=0)
     parser.add_argument('--C', help='sampling fraction of clietns per each round', type=float, default=0.1)
     parser.add_argument('--K', help='number of total cilents', type=int, default=100)
     parser.add_argument('--R', help='number of total federated learning rounds', type=int, default=1000)
