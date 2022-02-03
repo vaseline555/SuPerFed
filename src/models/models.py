@@ -61,7 +61,7 @@ class NextCharLM(nn.Module):
 
     def forward(self, x):
         encoded = self.encoder(x)
-        output, _, _ = self.rnn(encoded)
+        output, _ = self.rnn(encoded)
         output = self.classifier(output)
         output = output.permute(0, 2, 1)  # change dimension to (B, C, T)
         return output

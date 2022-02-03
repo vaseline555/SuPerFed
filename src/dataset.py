@@ -212,6 +212,7 @@ class TinyImageNetDataset(torch.utils.data.Dataset):
                 self.val_img_to_class[words[0]] = words[1]
                 set_of_classes.add(words[1])
         
+        classes = sorted(list(set_of_classes))
         self.len = len(list(self.val_img_to_class.keys()))
         self.class_to_target_idx = {classes[i]: i for i in range(len(sorted(list(set_of_classes))))}
         self.target_idx_to_class = {i: classes[i] for i in range(len(sorted(list(set_of_classes))))}
@@ -245,12 +246,12 @@ class TinyImageNetDataset(torch.utils.data.Dataset):
         return [self.class_to_label[self.target_idx_to_class[i.item()]] for i in idx]
 
     def __len__(self):
-        return self.len
+        return len(self.inputs)
     
     def __getitem__(self, index):
         # get corresponding inputs & targets pair
-        inputs, targets = self.inputs[index], self.targets[index]
-        inputs = PIL.Image.open(inputs).convert('RGB')
+        targets = self.targets[index]
+        inputs = PIL.Image.open(self.inputs).convert('RGB')[index]
         
         # apply transformation
         if self.transform is not None:
@@ -339,13 +340,15 @@ class ShakespeareDataset(LEAFDataset):
     def _tokenize(self):
         for idx in range(len(self.inputs)):
             self.inputs[idx] = [self.char_to_idx[char] for char in self.inputs[idx]]
+        
+        for idx in range(len(self.targets)):
             self.targets[idx] = [self.char_to_idx[char] for char in self.targets[idx]]
 
     def __len__(self):
         return len(self.inputs)
 
     def __getitem__(self, index):
-        return np.array(self.inputs[index]), np.array(self.targets[index]), index
+        return np.array(self.inputs[index]), np.array(self.targets[index])
 
 
 
@@ -413,9 +416,6 @@ class NoisyMNISTDataset(MNISTDataset):
                 self.noisy_targets, self.actual_noise_rate = multiclass_pair_noisify(targets=self.targets, noise_rate=self.noise_rate, seed=args.global_seed, num_classes=args.num_classes)
             self.noise_mask = np.transpose(self.noisy_targets) != np.transpose(self.targets)
             self.targets, self.original_targets = self.noisy_targets, self.targets
-            
-    def __getitem__(self, index):
-        return np.array(self.inputs[index]), np.array(self.targets[index]), np.array(self.original_targets[index])
 
 # CIFAR10
 class NoisyCIFARDataset(CIFARDataset):
@@ -430,6 +430,3 @@ class NoisyCIFARDataset(CIFARDataset):
                 self.noisy_targets, self.actual_noise_rate = multiclass_pair_noisify(targets=self.targets, noise_rate=self.noise_rate, seed=args.global_seed, num_classes=args.num_classes)
             self.noise_mask = np.transpose(self.noisy_targets) != np.transpose(self.targets)
             self.targets, self.original_targets = self.noisy_targets, self.targets
-            
-    def __getitem__(self, index):
-        return np.array(self.inputs[index]), np.array(self.targets[index]), np.array(self.original_targets[index])

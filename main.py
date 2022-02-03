@@ -39,10 +39,6 @@ def main(args, writer):
     # get dataset
     split_map, server_testset, client_datasets = get_dataset(args)
     
-    # if different number of clients is constructed
-    if args.K != len(client_datasets):
-        print(f'[INFO] ...constructed clients are {len(client_datases)} (required: {args.K})!')
-        args.K = len(client_datasets)
     
     
     
@@ -75,7 +71,7 @@ def main(args, writer):
     central_server.fit()
 
     # save resulting losses and metrics
-    with open(os.path.join(args.result_path, f'{args.exp_name}/{args.global_seed}_result.json'), 'wb') as result_file:
+    with open(os.path.join(args.result_path, f'{args.exp_name}/final_result.json'), 'w') as result_file:
         arguments = {'arguments': {str(arg): getattr(args, arg) for arg in vars(args)}}
         sample_stats = {'sample_statistics': split_map}
         results = {'results': {key: value for key, value in central_server.results.items() if len(value) > 0}}
@@ -130,7 +126,7 @@ if __name__ == "__main__":
     parser.add_argument('--nu', help='constant for low-loss subspace construction term', type=float, default=1.0)
     
     # model related arguments
-    parser.add_argument('--model_name', help='model to use [TwoNN|TwoCNN|NextCharLSTM|ResNet18|MobileNetv2]', type=str, choices=['TwoNN', 'TwoCNN', 'NextCharLM', 'ResNet18', 'MobileNetv2'])
+    parser.add_argument('--model_name', help='model to use [TwoNN|TwoCNN|NextCharLM|ResNet18|MobileNetv2]', type=str, choices=['TwoNN', 'TwoCNN', 'NextCharLM', 'ResNet18', 'MobileNetv2'])
     parser.add_argument('--init_type', type=str, help='initialization type [normal|xavier|xavier_uniform|kaiming|orthogonal|none]', default='xavier', choices=['xavier', 'normal', 'kaiming', 'xavier_uniform', 'orthogonal', 'none'])
     parser.add_argument('--init_gain', type=float, help='init gain for init type', default=1.0)
     parser.add_argument('--fc_type', help='type of fully connected layer', type=str, choices=['StandardLinear', 'LinesLinear'], default='StandardLinear')
@@ -176,4 +172,3 @@ if __name__ == "__main__":
     # bye!
     print('[INFO] ...done federated learning!\n[INFO] ...exit program!')
     sys.exit(0)
-
