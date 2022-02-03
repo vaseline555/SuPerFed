@@ -38,7 +38,12 @@ def main(args, writer):
     ###################
     # get dataset
     split_map, server_testset, client_datasets = get_dataset(args)
-    args.K = len(client_datasets)
+    
+    # if different number of clients is constructed
+    if args.K != len(client_datasets):
+        print(f'[INFO] ...constructed clients are {len(client_datases)} (required: {args.K})!')
+        args.K = len(client_datasets)
+    
     
     
     #################
@@ -56,6 +61,7 @@ def main(args, writer):
     model = initiate_model(model, args)
     
     
+    
     ##############
     # Run server #
     ##############
@@ -69,7 +75,7 @@ def main(args, writer):
     central_server.fit()
 
     # save resulting losses and metrics
-    with open(os.path.join(args.log_path, f'{args.exp_name}_{args.global_seed}.json'), 'wb') as result_file:
+    with open(os.path.join(args.result_path, f'{args.exp_name}/{args.global_seed}_result.json'), 'wb') as result_file:
         arguments = {'arguments': {str(arg): getattr(args, arg) for arg in vars(args)}}
         sample_stats = {'sample_statistics': split_map}
         results = {'results': {key: value for key, value in central_server.results.items() if len(value) > 0}}
@@ -80,9 +86,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     
     # default arguments
-    parser.add_argument('--exp_name', type=str, help='name of the experiment', required=True)
+    parser.add_argument('--exp_name', help='experiment name', type=str, required=True)
     parser.add_argument('--global_seed', help='global random seed (applied EXCEPT model initiailization)', type=int, default=5959)
-    parser.add_argument('--device', help='device to use, either cpu or cuda; default is cpu', type=str, default='cpu', choices=['cpu', 'cuda'])
+    parser.add_argument('--device', help='device to use, either cpu or cuda; default is cpu', type=str, default='cuda', choices=['cpu', 'cuda'])
     parser.add_argument('--data_path', help='data path', type=str, default='./data')
     parser.add_argument('--log_path', help='log path', type=str, default='./log')
     parser.add_argument('--result_path', help='result path', type=str, default='./result')
@@ -104,12 +110,11 @@ if __name__ == "__main__":
     
     # dataset split scenario
     parser.add_argument('--split_type', help='type of an expriment to conduct', type=str, choices=['iid', 'pathological', 'dirichlet', 'realistic'], required=True)
-    parser.add_argument('--shard_size', help='size of one shard to be assigned to each client; used only when `algo_type=pathological`', type=int)
+    parser.add_argument('--shard_size', help='size of one shard to be assigned to each client; used only when `algo_type=pathological`', type=int, default=300)
     parser.add_argument('--alpha', help='shape parameter for a Dirichlet distribution used for splitting data in non-IID manner; used only when `algo_type=dirichlet`', type=float, default=0.5)
     
     # federated learning arguments
     parser.add_argument('--algorithm', help='type of an algorithm to use', type=str, choices=['fedavg', 'fedprox', 'lg-fedavg', 'fedper', 'fedrep', 'ditto', 'apfl', 'pfedme', 'superfed-mm', 'superfed-lm'], required=True)
-    #parser.add_argument('--local_tuning', help='use local fine-tuning for a personalization (if positive value passed)', type=int, default=0)
     parser.add_argument('--C', help='sampling fraction of clietns per each round', type=float, default=0.1)
     parser.add_argument('--K', help='number of total cilents', type=int, default=100)
     parser.add_argument('--R', help='number of total federated learning rounds', type=int, default=1000)
@@ -142,18 +147,18 @@ if __name__ == "__main__":
         assert len(args.init_seed) <= 2, '[ERROR] number of `init_seed` should be less than or equal to 2!'
         
     # make path for saving losses & metrics
-    if not os.path.exists(args.result_path):
-        os.makedirs(os.path.join(args.result_path, f'{args.exp_name}_{args.global_seed}'))
+    if not os.path.exists(os.path.join(args.result_path, args.exp_name)):
+        os.makedirs(os.path.join(args.result_path, args.exp_name))
     
     # make path for saving plots
-    if not os.path.exists(args.plot_path):
-        os.makedirs(os.path.join(args.plot_path, f'{args.exp_name}_{args.global_seed}'))
+    if not os.path.exists(os.path.join(args.plot_path, args.exp_name)):
+        os.makedirs(os.path.join(args.plot_path, args.exp_name))
         
     # define path to save a log
-    args.log_path = f'{args.log_path}/{args.dataset}/{args.exp_name}'
+    args.log_path = f'{args.log_path}/{args.exp_name}'
 
     # initiate TensorBaord for tracking losses and metrics
-    writer = SummaryWriter(log_dir=args.log_path, filename_suffix=args.exp_name)
+    writer = SummaryWriter(log_dir=args.log_path, filename_suffix=str(args.global_seed))
     tb_thread = threading.Thread(
         target=launch_tensor_board,
         args=([args.log_path, args.tb_port, args.tb_host])

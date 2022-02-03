@@ -5,9 +5,11 @@ import json
 import torch
 import torchvision
 import numpy as np
+import matplotlib.pyplot as plt
 
 from tqdm import tqdm
 from joblib import Parallel, delayed
+
 from .dataset import MNISTDataset, CIFARDataset, NoisyMNISTDataset, NoisyCIFARDataset, TinyImageNetDataset, FEMNISTDataset, ShakespeareDataset
 
 
@@ -197,8 +199,8 @@ def get_dataset(args):
     client_datasets = []
     if args.dataset in ['MNIST', 'CIFAR10', 'CIFAR100']:
         # call raw datasets
-        raw_train = torchvision.datasets.__dict__[args.dataset](root=args.data_path, train=True, transform=torchvision.transforms.ToTensor(), download=True)
-        raw_test = torchvision.datasets.__dict__[args.dataset](root=args.data_path, train=False, transform=torchvision.transforms.ToTensor(), download=True)
+        raw_train = torchvision.datasets.__dict__[args.dataset](root=args.data_path, train=True, transform=torchvision.transforms.Compose([torchvision.transforms.Resize(28), torchvision.transforms.ToTensor()]), download=True)
+        raw_test = torchvision.datasets.__dict__[args.dataset](root=args.data_path, train=False, transform=torchvision.transforms.Compose([torchvision.transforms.Resize(28), torchvision.transforms.ToTensor()]), download=True)
         
         # get split indices
         split_map = split_data(args, raw_train)
@@ -228,25 +230,25 @@ def get_dataset(args):
             def construct_cifar(indices):
                 if args.label_noise:
                     return (
-                        NoisyCIFARDataset(args, indices=indices[:int(len(indices) * (1. - args.test_fraction))], train=True, transform=torchvision.transforms.ToTensor()),
-                        CIFARDataset(args, indices=indices[int(len(indices) * (1. - args.test_fraction)):], train=True, transform=torchvision.transforms.ToTensor())
+                        NoisyCIFARDataset(args, indices=indices[:int(len(indices) * (1. - args.test_fraction))], train=True, transform=torchvision.transforms.Compose([torchvision.transforms.Resize(28), torchvision.transforms.ToTensor()])),
+                        CIFARDataset(args, indices=indices[int(len(indices) * (1. - args.test_fraction)):], train=True, transform=torchvision.transforms.Compose([torchvision.transforms.Resize(28), torchvision.transforms.ToTensor()]))
                     )
                 else:
                     return (
-                        CIFARDataset(args, indices=indices[:int(len(indices) * (1. - args.test_fraction))], train=True, transform=torchvision.transforms.ToTensor()),
-                        CIFARDataset(args, indices=indices[int(len(indices) * (1. - args.test_fraction)):], train=True, transform=torchvision.transforms.ToTensor())
+                        CIFARDataset(args, indices=indices[:int(len(indices) * (1. - args.test_fraction))], train=True, transform=torchvision.transforms.Compose([torchvision.transforms.Resize(28), torchvision.transforms.ToTensor()])),
+                        CIFARDataset(args, indices=indices[int(len(indices) * (1. - args.test_fraction)):], train=True, transform=torchvision.transforms.Compose([torchvision.transforms.Resize(28), torchvision.transforms.ToTensor()]))
                     )
             client_datasets = Parallel(n_jobs=os.cpu_count() - 1, prefer='threads')(delayed(construct_cifar)(indices) for _, indices in tqdm(split_map.items(), desc=f'[INFO] ...create datasets [{args.dataset}]!'))
 
             # construct server datasets
-            server_testset = CIFARDataset(args, train=False, transform=torchvision.transforms.ToTensor())
+            server_testset = CIFARDataset(args, train=False, transform=torchvision.transforms.Compose([torchvision.transforms.Resize(28), torchvision.transforms.ToTensor()]))
             split_map = {k: len(v) for k, v in split_map.items()}
             return split_map, server_testset, client_datasets
         
     elif args.dataset == 'TinyImageNet':
         # call raw dataset
-        raw_train = TinyImageNet(root=args.data_path, split='train', transform=torchvision.transforms.ToTensor(), download=True)
-        raw_test = TinyImageNet(root=args.data_path, split='val', transform=torchvision.transforms.ToTensor(), download=True)
+        raw_train = TinyImageNet(root=args.data_path, split='train', download=True)
+        raw_test = TinyImageNet(root=args.data_path, split='val', download=True)
         
         # get split indices
         split_map = split_data(args, raw_train)
@@ -254,13 +256,13 @@ def get_dataset(args):
         # construct client datasets
         def construct_tinyimagenet(indices):
             return (
-                TinyImageNetDataset(args, indices=indices[:int(len(indices) * (1. - args.test_fraction))], train=True, transform=torchvision.transforms.ToTensor()),
-                TinyImageNetDataset(args, indices=indices[int(len(indices) * (1. - args.test_fraction)):], train=True, transform=torchvision.transforms.ToTensor())
+                TinyImageNetDataset(args, indices=indices[:int(len(indices) * (1. - args.test_fraction))], train=True, transform=torchvision.transforms.Compose([torchvision.transforms.Resize(64), torchvision.transforms.ToTensor()])),
+                TinyImageNetDataset(args, indices=indices[int(len(indices) * (1. - args.test_fraction)):], train=True, transform=torchvision.transforms.Compose([torchvision.transforms.Resize(64), torchvision.transforms.ToTensor()]))
             )
         client_datasets = Parallel(n_jobs=os.cpu_count() - 1, prefer='threads')(delayed(construct_tinyimagenet)(indices) for _, indices in tqdm(split_map.items(), desc=f'[INFO] ...create datasets [{args.dataset}]!'))
 
         # construct server datasets
-        server_testset = TinyImageNetDataset(args, train=False, transform=torchvision.transforms.ToTensor())
+        server_testset = TinyImageNetDataset(args, train=False, transform=torchvision.transforms.Compose([torchvision.transforms.Resize(64), torchvision.transforms.ToTensor()]))
         return split_map, server_testset, client_datasets
     
     elif args.dataset in ['FEMNIST', 'Shakespeare']:
@@ -492,27 +494,27 @@ def record_results(args, writer, results, mode, step, loss, acc1, acc5, ece, mce
     # record metrics and loss
     writer.add_scalars(
         f'Loss_{mode}',
-        {f'[{args.exp_name}] {args.algorithm}_{args.dataset}_{args.model_name}_{mode}_loss_mean': loss.mean()},
+        {'loss_mean': loss.mean()},
         step
     )
     writer.add_scalars(
         f'Top 1 Accuracy_{mode}',
-        {f'[{args.exp_name}] {args.algorithm}_{args.dataset}_{args.model_name}_{mode}_top1_acc_mean': acc1.mean()},
+        {'top1_acc_mean': acc1.mean()},
         step
     )
     writer.add_scalars(
         f'Top 5 Accuracy_{mode}',
-        {f'[{args.exp_name}] {args.algorithm}_{args.dataset}_{args.model_name}_{mode}_top5_acc_mean': acc5.mean()},
+        {'top5_acc_mean': acc5.mean()},
         step
     )
     writer.add_scalars(
         f'Expected Calibration Error_{mode}',
-        {f'[{args.exp_name}] {args.algorithm}_{args.dataset}_{args.model_name}_{mode}_ece_mean': ece.mean()},
+        {'ece_mean': ece.mean()},
         step
     )
     writer.add_scalars(
         f'Maximum Calibration Error_{mode}',
-        {f'[{args.exp_name}] {args.algorithm}_{args.dataset}_{args.model_name}_{mode}_mce_mean': mce.mean()},
+        {'mce_mean': mce.mean()},
         step
     )
     return results, loss, acc1, acc5, ece, mce
@@ -523,7 +525,7 @@ def record_results(args, writer, results, mode, step, loss, acc1, acc5, ece, mce
 # Plot delta metrics #
 ######################
 def plot_delta_histogram(args, writer, mode, step, delta):
-    color_map - {'Loss': 'b', 'Top 1 Accuracy': 'g', 'Top 5 Accuracy': 'r', 'Expected Calibration Error': 'c', 'Maximum Calibration Error': 'm'}
+    color_map = {'Loss': 'b', 'Top 1 Accuracy': 'g', 'Top 5 Accuracy': 'r', 'Expected Calibration Error': 'c', 'Maximum Calibration Error': 'm'}
     
     # make figure
     fig, ax = plt.subplots(figsize=(6, 3))
@@ -533,10 +535,10 @@ def plot_delta_histogram(args, writer, mode, step, delta):
     # record
     writer.add_figure(
         f'Histogram_{mode}',
-        {f'[{args.exp_name}] {args.algorithm}_{args.dataset}_{args.model_name}_{mode}': fig},
+        fig,
         step,
         close=True
     )
     
     # save
-    plt.savefig(f'./{args.plot_path}/{args.exp_name}_{args.global_seed}/delta_histogram_{mode}_{str(int(step * self.args.eval_every)).zfill(4)}.png')
+    fig.savefig(f'./{args.plot_path}/{args.exp_name}/delta_histogram_{mode}_{str(int(step * args.eval_every)).zfill(4)}.png')

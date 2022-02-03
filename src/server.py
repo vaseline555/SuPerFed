@@ -310,10 +310,10 @@ class Server(object):
                 
                 # plot histogram
                 plot_delta_histogram(self.args, self.writer, 'Loss', self._round // self.args.eval_every, loss_delta)
-                plot_delta_histgoram(self.args, self.writer, 'Top 1 Accuracy', self._round // self.args.eval_every, acc1_delta)
-                plot_delta_histgoram(self.args, self.writer, 'Top 5 Accuracy', self._round // self.args.eval_every, acc5_delta)
-                plot_delta_histgoram(self.args, self.writer, 'Expected Calibration Error', self._round // self.args.eval_every, ece_delta)
-                plot_delta_histgoram(self.args, self.writer, 'Maximum Calibration Error', self._round // self.args.eval_every, mce_delta)
+                plot_delta_histogram(self.args, self.writer, 'Top 1 Accuracy', self._round // self.args.eval_every, acc1_delta)
+                plot_delta_histogram(self.args, self.writer, 'Top 5 Accuracy', self._round // self.args.eval_every, acc5_delta)
+                plot_delta_histogram(self.args, self.writer, 'Expected Calibration Error', self._round // self.args.eval_every, ece_delta)
+                plot_delta_histogram(self.args, self.writer, 'Maximum Calibration Error', self._round // self.args.eval_every, mce_delta)
                 
             # evaluate server-side model's performance using server-side holdout set if possible
             results = self.evaluate_global_model()
