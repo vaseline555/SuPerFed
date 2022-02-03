@@ -4,9 +4,12 @@ import torch
 import torchvision
 import numpy as np
 
-from dataset import MNISTDataset, CIFARDataset, NoisyMNISTDataset, NoisyCIFARDataset, TinyImageNetDataset, LEAFParser
+from tqdm import tqdm
+from joblib import Parallel, delayed
+from .dataset import MNISTDataset, CIFARDataset, NoisyMNISTDataset, NoisyCIFARDataset, TinyImageNetDataset, FEMNISTDataset, ShakespeareDataset
 
 logger = logging.getLogger(__name__)
+
 
 
 #######################
@@ -28,54 +31,6 @@ def launch_tensor_board(log_path, port, host):
 #######################
 # Datset manipulation #
 #######################
-# for simulating a label noise
-# https://github.com/UCSC-REAL/cores/blob/main/data/utils.py
-def multiclass_noisify(targets, P, seed):
-    assert P.shape[0] == P.shape[1]
-    assert np.max(targets) < P.shape[0]
-    np.testing.assert_array_almost_equal(P.sum(axis=1), np.ones(P.shape[1]))
-    assert (P >= 0.0).all()
-
-    noisy_targets = targets.copy()
-    flipper = np.random.RandomState(seed)
-
-    for idx in np.arange(len(targets)):
-        i = targets[idx]
-        flipped = flipper.multinomial(n=1, pvals=P[i, :], size=1)[0]
-        noisy_targets[idx] = np.where(flipped == 1)[0]
-    return noisy_targets
-
-def multiclass_pair_noisify(targets, noise_rate, seed, num_classes):
-    P = np.eye(num_classes)
-
-    if noise_rate > 0.0:
-        # 0 -> 1
-        P[0, 0], P[0, 1] = 1. - noise_rate, noise_rate
-        for i in range(1, num_classes-1):
-            P[i, i], P[i, i + 1] = 1. - noise_rate, noise_rate
-        P[num_classes - 1, num_classes - 1], P[num_classes - 1, 0] = 1. - noise_rate, noise_rate
- 
-        noisy_targets = multiclass_noisify(targets, P=P, seed=seed)
-        actual_noise = (np.array(noisy_targets).flatten() != np.array(targets).flatten()).mean()
-        assert actual_noise > 0.0
-    return np.array(noisy_targets).flatten(), actual_noise
-        
-def multiclass_symmetric_noisify(targets, noise_rate, seed, num_classes):
-    P = np.ones((num_classes, num_classes))
-    P *= (noise_rate / (num_classes - 1)) 
-
-    if noise_rate > 0.0:
-        # 0 -> 1
-        P[0, 0] = 1. - noise_rate
-        for i in range(1, num_classes-1):
-            P[i, i] = 1. - noise_rate
-        P[num_classes - 1, num_classes - 1] = 1. - noise_rate
-
-        noisy_targets = multiclass_noisify(targets, P, seed)
-        actual_noise = (np.array(noisy_targets).flatten() != np.array(targets).flatten()).mean()
-        assert actual_noise > 0.0
-    return np.array(noisy_targets).flatten(), actual_noise
-
 # split data suited to a federated learning
 def split_data(args, raw_train):
     """Split data indices using labels.
@@ -143,10 +98,6 @@ def split_data(args, raw_train):
             idx_split = np.array_split(target_class_indices, proportions)
             client_indices_list = [j + idx.tolist() for j, idx in zip(client_indices_list, idx_split)]
 
-            # check minimal size
-            min_size = min([len(indices) for indices in client_indices_list])
-            min_size = min(min_size, min([len(idx) for idx in idx_split]))
-
         # shuffle finally
         for j in range(args.K):
             np.random.seed(args.global_seed); np.random.shuffle(client_indices_list[j])
@@ -159,6 +110,77 @@ def split_data(args, raw_train):
     elif args.split_type == 'realistic':
         return print('[INFO] No need to split... use LEAF parser directly!')
 
+# parser object for LEAF benchmark datsaet
+class LEAFParser:
+    def __init__(self, args):
+        self.root = args.data_path
+        self.dataset_name = args.dataset.lower()
+        
+        # declare appropriate dataset class
+        if 'femnist' in self.dataset_name:
+            self.dataset_class = FEMNISTDataset
+        elif 'shakespeare' in self.dataset_name:
+            self.dataset_class = ShakespeareDataset
+        else:
+            raise NotImplementedError(f'[ERROR] {self.dataset_name} is not supported yet!')
+                                      
+        # set path
+        self.train_root = f'{self.root}/{self.dataset_name.lower()}/data/train'
+        self.test_root = f'{self.root}/{self.dataset_name}/data/test'
+        
+        # get raw data
+        self.raw_train = self._parse_data(self.train_root, 'train')
+        self.raw_test = self._parse_data(self.test_root, 'test')
+        
+        # merge raw data
+        self.merged_train = self._merge_raw_data(self.raw_train, 'train')
+        self.merged_test = self._merge_raw_data(self.raw_test, 'test')
+        del self.raw_train, self.raw_test; gc.collect()
+        
+        # make dataset for each client
+        self.split_map, self.datasets = self._convert_to_dataset(self.merged_train, self.merged_test)
+        del self.merged_train, self.merged_test; gc.collect()
+        
+    def _parse_data(self, root, mode):
+        raw_all = []
+        for file in tqdm(os.listdir(root), desc=f'[INFO] ...parsing {mode} data (LEAF - {self.dataset_name.upper()})'):
+            with open(f'{root}/{file}') as raw_files:
+                for raw_file in raw_files:
+                    raw_all.append(json.loads(raw_file))
+        return raw_all
+    
+    def _merge_raw_data(self, data, mode):
+        merged_raw_data = {'users': list(), 'num_samples': list(), 'user_data': dict()}
+        for raw_data in tqdm(data, desc=f'[INFO] ...merging raw {mode} data (LEAF - {self.dataset_name.upper()})'):
+            merged_raw_data['users'].extend(raw_data['users'])
+            merged_raw_data['num_samples'].extend(raw_data['num_samples'])
+            merged_raw_data['user_data'] = {**merged_raw_data['user_data'], **raw_data['user_data']}
+        return merged_raw_data
+    
+    def _convert_to_dataset(self, merged_train, merged_test):
+        """
+        Returns:
+            [tuple(local_training_set[indices_1], local_test_set[indices_1]), tuple(local_training_set[indices_2], local_test_set[indices_2]), ...]
+        """
+        def construct_leaf(idx, user):
+            # copy dataset class prototype for each training set and test set
+            tr_dset, te_dset = copy.deepcopy(self.dataset_class)(), copy.deepcopy(self.dataset_class)()
+            setattr(tr_dset, 'train', True); setattr(te_dset, 'train', False)
+            
+            # set essential attributes
+            tr_dset.identifier = user; te_dset.identifier = user
+            tr_dset.data = merged_train['user_data'][user]; te_dset.data = merged_test['user_data'][user]
+            tr_dset.num_samples = merged_train['num_samples'][idx]; te_dset.num_samples = merged_test['num_samples'][idx]
+            tr_dset._make_dataset(); te_dset._make_dataset()
+            return (tr_dset, te_dset)
+        datasets = Parallel(n_jobs=os.cpu_count() - 1, prefer='threads')(delayed(construct_leaf)(idx, user) for idx, user in tqdm(enumerate(merged_train['users']), desc=f'[INFO] ...create datasets [LEAF - {self.dataset_name.upper()}]!'))
+        split_map = dict(zip([i for i in range(len(merged_train['user_data']))], list(map(sum, zip(merged_train['num_samples'], merged_test['num_samples'])))))
+        return split_map, datasets
+    
+    def get_datasets(self):
+        assert self.datasets is not None, '[ERROR] dataset is not constructed internally!'
+        return self.split_map, self.datasets
+    
 # construct a client dataset (training & test set)
 def get_dataset(args):
     """
@@ -180,7 +202,7 @@ def get_dataset(args):
         
         # get split indices
         split_map = split_data(args, raw_train)
-        
+
         if args.dataset == 'MNIST':
             # construct client datasets
             def construct_mnist(indices):
@@ -194,7 +216,7 @@ def get_dataset(args):
                         MNISTDataset(args, indices=indices[:int(len(indices) * (1. - args.test_fraction))], train=True, transform=torchvision.transforms.ToTensor()),
                         MNISTDataset(args, indices=indices[int(len(indices) * (1. - args.test_fraction)):], train=True, transform=torchvision.transforms.ToTensor())
                     )
-            client_datasets = Parallel(n_jobs=4, prefer='threads')(delayed(construct_mnist)(indices) for _, indices in tqdm(split_map.items()))
+            client_datasets = Parallel(n_jobs=os.cpu_count() - 1, prefer='threads')(delayed(construct_mnist)(indices) for _, indices in tqdm(split_map.items(), desc=f'[INFO] ...create datasets [{args.dataset}]!'))
                 
             # construct server datasets
             server_testset = MNISTDataset(args, train=False, transform=torchvision.transforms.ToTensor())
@@ -214,7 +236,7 @@ def get_dataset(args):
                         CIFARDataset(args, indices=indices[:int(len(indices) * (1. - args.test_fraction))], train=True, transform=torchvision.transforms.ToTensor()),
                         CIFARDataset(args, indices=indices[int(len(indices) * (1. - args.test_fraction)):], train=True, transform=torchvision.transforms.ToTensor())
                     )
-            client_datasets = Parallel(n_jobs=4, prefer='threads')(delayed(construct_cifar)(indices) for _, indices in tqdm(split_map.items()))
+            client_datasets = Parallel(n_jobs=os.cpu_count() - 1, prefer='threads')(delayed(construct_cifar)(indices) for _, indices in tqdm(split_map.items(), desc=f'[INFO] ...create datasets [{args.dataset}]!'))
 
             # construct server datasets
             server_testset = CIFARDataset(args, train=False, transform=torchvision.transforms.ToTensor())
@@ -235,7 +257,7 @@ def get_dataset(args):
                 TinyImageNetDataset(args, indices=indices[:int(len(indices) * (1. - args.test_fraction))], train=True, transform=torchvision.transforms.ToTensor()),
                 TinyImageNetDataset(args, indices=indices[int(len(indices) * (1. - args.test_fraction)):], train=True, transform=torchvision.transforms.ToTensor())
             )
-        client_datasets = Parallel(n_jobs=4, prefer='threads')(delayed(construct_tinyimagenet)(indices) for _, indices in tqdm(split_map.items()))
+        client_datasets = Parallel(n_jobs=os.cpu_count() - 1, prefer='threads')(delayed(construct_tinyimagenet)(indices) for _, indices in tqdm(split_map.items(), desc=f'[INFO] ...create datasets [{args.dataset}]!'))
 
         # construct server datasets
         server_testset = TinyImageNetDataset(args, train=False, transform=torchvision.transforms.ToTensor())
@@ -272,25 +294,25 @@ def init_weights(model, init_type, init_gain, seeds):
         if classname.find('BatchNorm2d') != -1:
             if hasattr(m, 'weight') and m.weight is not None:
                 torch.manual_seed(seeds[0]); torch.nn.init.normal_(m.weight.data, 1.0, init_gain)
-                if len(seeds) == 2: torch.manual_seed(seeds[-1]); torch.nn.init.normal_(m.weight1.data, 1.0, init_gain)
+                if len(seeds) == 2: torch.manual_seed(seeds[-1]); torch.nn.init.normal_(m.weight_1.data, 1.0, init_gain)
             if hasattr(m, 'bias') and m.bias is not None:
                 torch.nn.init.constant_(m.bias.data, 0.0)
         elif hasattr(m, 'weight') and (classname.find('Conv') != -1 or classname.find('Linear') != -1):
             if init_type == 'normal':
                 torch.manual_seed(seeds[0]); torch.nn.init.normal_(m.weight.data, 0.0, init_gain)
-                if len(seeds) == 2: torch.manual_seed(seeds[-1]); torch.nn.init.normal_(m.weight1.data, 0.0, init_gain)
+                if len(seeds) == 2: torch.manual_seed(seeds[-1]); torch.nn.init.normal_(m.weight_1.data, 0.0, init_gain)
             elif init_type == 'xavier':
                 torch.manual_seed(seeds[0]); torch.nn.init.xavier_normal_(m.weight.data, gain=init_gain)
-                if len(seeds) == 2: torch.manual_seed(seeds[-1]); torch.nn.init.xavier_normal_(m.weight1.data, gain=init_gain)
+                if len(seeds) == 2: torch.manual_seed(seeds[-1]); torch.nn.init.xavier_normal_(m.weight_1.data, gain=init_gain)
             elif init_type == 'xavier_uniform':
                 torch.manual_seed(seeds[0]); torch.nn.init.xavier_uniform_(m.weight.data, gain=1.0)
-                if len(seeds) == 2: torch.manual_seed(seeds[-1]); torch.nn.init.xavier_uniform_(m.weight1.data, gain=1.0)
+                if len(seeds) == 2: torch.manual_seed(seeds[-1]); torch.nn.init.xavier_uniform_(m.weight_1.data, gain=1.0)
             elif init_type == 'kaiming':
                 torch.manual_seed(seeds[0]); torch.nn.init.kaiming_normal_(m.weight.data, a=0, mode='fan_in')
-                if len(seeds) == 2: torch.manual_seed(seeds[-1]); torch.nn.init.kaiming_normal_(m.weight1.data, a=0, mode='fan_in')
+                if len(seeds) == 2: torch.manual_seed(seeds[-1]); torch.nn.init.kaiming_normal_(m.weight_1.data, a=0, mode='fan_in')
             elif init_type == 'orthogonal':
                 torch.manual_seed(seeds[0]); torch.nn.init.orthogonal_(m.weight.data, gain=init_gain)
-                if len(seeds) == 2: torch.manual_seed(seeds[-1]); torch.nn.init.orthogonal_(m.weight1.data, gain=init_gain)
+                if len(seeds) == 2: torch.manual_seed(seeds[-1]); torch.nn.init.orthogonal_(m.weight_1.data, gain=init_gain)
             elif init_type == 'none':  # uses pytorch's default init method
                 m.reset_parameters()
             else:

@@ -1,20 +1,16 @@
-import json
-import copy
-import gc
 import os
-import logging
-
-import numpy as np
+import gc
+import copy
 import torch
-import torch.nn as nn
+import logging
+import numpy as np
 
-from multiprocessing import pool, cpu_count
-from torch.utils.data import DataLoader
-from tqdm.auto import tqdm
-from collections import OrderedDict
+from tqdm import tqdm
+from collections import OrderedDict, defaultdict
+from joblib import Parallel, delayed
 
-from utils import *
-from client import Client
+from .utils import *
+from .client import Client
 
 logger = logging.getLogger(__name__)
 
@@ -41,261 +37,345 @@ class Server(object):
         self.algorithm = args.algorithm
         
         # personalization realted attributes
-        self.start_personalization = int(args.L * args.R)
         self.optimizer = torch.optim.SGD
         self.criterion = torch.nn.CrossEntropyLoss
         
         # result container
-        self.results = {'global_loss': [], 'global_top1_acc': [], 'global_top5_acc': [],
-                        'base_loss_mean': [], 'base_loss_std': [],
-                        'per_loss_mean': [], 'per_loss_std': [],
-                        'base_top1_acc_mean': [], 'base_top1_acc_mean': [],
-                        'per_top1_acc_mean': [], 'per_top1_acc_std': [],
-                        'base_top5_acc_mean': [], 'base_top6_acc_mean': [],
-                        'per_top5_acc_mean': [], 'per_top6_acc_std': [],
-                        'base_ece_mean': [], 'base_ece_std': [],
-                        'per_ece_mean': [], 'per_ece_std': []}
-    
-     def create_clients(self, local_datasets):
+        self.results = defaultdict(list)
+        """
+        {'global_loss': [], 'global_top1_acc': [], 'global_top5_acc': [],
+        'base_loss_mean': [], 'base_loss_std': [],
+        'per_loss_mean': [], 'per_loss_std': [],
+        'base_top1_acc_mean': [], 'base_top1_acc_mean': [],
+        'per_top1_acc_mean': [], 'per_top1_acc_std': [],
+        'base_top5_acc_mean': [], 'base_top6_acc_mean': [],
+        'per_top5_acc_mean': [], 'per_top6_acc_std': [],
+        'base_ece_mean': [], 'base_ece_std': [],
+        'per_ece_mean': [], 'per_ece_std': []}
+        """
+    def create_clients(self, k, training_set, test_set):
         """Initialize each client instance.
         """
-        clients = []
-        for k, (training_set, test_set) in tqdm(enumerate(local_datasets), desc='[INFO] ...enroll clients to the server!', leave=False):
-            client = Client(args=self.args, client_id=k, training_set=training_set, test_set=test_set, device=self.device)
-            client.model = copy.deepcopy(self.model)
-            client.initialize_model()
-            client.optimizer = copy.deepcopy(self.optimizer)
-            client.criterion = copy.deepcopy(self.criterion)
-            clients.append(client)
-        else:
-            message = f'[Round: {str(self._round).zfill(4)}] ...successfully created all {str(self.num_clients)} clients!'
-            print(message); logging.info(message)
-            del message; gc.collect()
-        return clients
+        client = Client(args=self.args, client_id=k, training_set=training_set, test_set=test_set, device=self.args.device)
+        client.model = copy.deepcopy(self.model)
+        client.optimizer = copy.deepcopy(self.optimizer)
+        client.criterion = copy.deepcopy(self.criterion)
+        client.initialize_model()
+        return client
     
     def setup(self):
-        """Set up all configuration for federated learning."""
+        """Set up all configuration for federated learning.
+        """
         # valid only at the very first round
         assert self._round == 0
         
-        # assign dataset to each client
-        self.clients = self.create_clients(local_datasets)
+        # setup clients (assign dataset, pass model, optimizer and criterion)
+        self.clients = Parallel(n_jobs=os.cpu_count() - 1, prefer='threads')(delayed(self.create_clients)(k, training_set, test_set) for k, (training_set, test_set) in tqdm(enumerate(self.client_datasets), desc='[INFO] ...enroll clients to the server!'))
         del self.client_datasets; gc.collect()
         
-        # send the model skeleton to all clients
-        self.transmit_model()
-
-    def transmit_model(self, sampled_client_indices=None):
-        if sampled_client_indices is None:
-            # send the global model to all clients before the very first and after the last federated round
-            assert (self._round == 0) or (self._round == self.num_rounds)
-
-            for idx, client in tqdm(enumerate(self.clients), desc='[INFO] ...transmit global models to clients!', leave=False):
-                client.model = copy.deepcopy(self.model)
-                
-            message = f'[Round: {str(self._round).zfill(4)}] ...successfully transmitted models to all {str(self.num_clients)} clients!'
-            print(message); logging.info(message)
-            del message; gc.collect()
-        else:
-            # send the global model to selected clients
-            assert self._round > 0
-
-            # only send a global model (alpha = 0)
-            partial = {k: v for k, v in self.model.state_dict().items() if '_1' not in k}
-            for idx in tqdm(sampled_client_indices, leave=False):
-                state = self.clients[idx].model.state_dict()
-                state.update(partial)
-                self.clients[idx].model.load_state_dict(state)
-            """
-            for idx in tqdm(sampled_client_indices, leave=False):
-                self.clients[idx].model = copy.deepcopy(self.model)
-            """
-            message = f"[Round: {str(self._round).zfill(4)}] ...successfully transmitted models to {str(len(sampled_client_indices))} selected clients!"
-            print(message); logging.info(message)
-            del message; gc.collect()
+        # notice
+        message = f'[INFO] ...successfully created all {str(self.num_clients)} clients!'
+        print(message); logging.info(message); del message; gc.collect()
 
     def sample_clients(self):
-        """Select some fraction of all clients."""
+        """Select some fraction of all clients.
+        """
         # sample clients randommly
-        message = f"[Round: {str(self._round).zfill(4)}] Select clients...!"
-        print(message); logging.info(message)
-        del message; gc.collect()
-
         num_sampled_clients = max(int(self.fraction * self.num_clients), 1)
         sampled_client_indices = sorted(np.random.choice(a=[i for i in range(self.num_clients)], size=num_sampled_clients, replace=False).tolist())
-
         return sampled_client_indices
     
-    def update_selected_clients(self, sampled_client_indices, epoch=None, lr=None):
-        """Call "client_update" function of each selected client."""
-        if lr is None:
-            lr = self.eta_max * 0.995**self._round
-            message = f"[Round: {str(self._round).zfill(4)}] Start updating selected {len(sampled_client_indices)} clients...!"
-        else:
-            message = f"[Round: {str(self._round).zfill(4)}] Start personalizing selected {len(sampled_client_indices)} clients...!"
-        print(message); logging.info(message)
-        del message; gc.collect()
-        
-        # update selected clients
-        selected_total_size = 0
-        for idx in tqdm(sampled_client_indices, leave=False):
-            self.clients[idx].client_update(lr, epoch)
-            selected_total_size += len(self.clients[idx])
-
-        message = f"[Round: {str(self._round).zfill(4)}] ...{len(sampled_client_indices)} clients are selected and updated (with total sample size: {str(selected_total_size)})!"
-        print(message); logging.info(message)
-        del message; gc.collect()
-
-        return selected_total_size
-    
-    def mp_update_selected_clients(self, sampled_client_indices):
-        """Multiprocessing-applied version of "update_selected_clients" method."""
-        # update selected clients
-        message = f"[Round: {str(self._round).zfill(4)}] Start updating selected client {str(self.clients[sampled_client_indices].id).zfill(4)}...!"
-        print(message, flush=True); logging.info(message)
-        del message; gc.collect()
-        
-        if self._round >= int(self.per_frac * self.num_rounds):
-            start_local_training = True
-        else:
-            start_local_training = False
+    def transmit_model(self, idx):
+        """Transmit global model to clients.
+        """
+        # transmit all model parameters
+        if self.algorithm in ['fedavg', 'fedprox']: 
+            self.clients[idx].model = copy.deepcopy(self.model)
             
-        self.clients[sampled_client_indices].client_update(lr=self.eta_max * 0.995**self._round, epoch=None, start_local_training=start_local_training)
-        client_size = len(self.clients[sampled_client_indices])
-
-        message = f"[Round: {str(self._round).zfill(4)}] ...client {str(self.clients[sampled_client_indices].id).zfill(4)} is selected and updated (with total sample size: {str(client_size)})!"
-        print(message, flush=True); logging.info(message)
-        del message; gc.collect()
-
-        return client_size
-    
-    def average_model(self, sampled_client_indices, coefficients):
-        """Average the updated and transmitted parameters from each selected client."""
-        message = f"[Round: {str(self._round).zfill(4)}] Aggregate updated weights of {len(sampled_client_indices)} clients...!"
-        print(message); logging.info(message)
-        del message; gc.collect()
+        # transmit paramaeters attached to the penultimate layer
+        elif self.algorithm in ['lg-fedavg']: 
+            partial_model = {k: v for k, v in self.model.state_dict().items() if 'classifier' in k}
+            federated_model_at_client = self.clients[idx].model.state_dict()
+            federated_model_at_client.update(partial_model)
+            self.clients[idx].model.load_state_dict(federated_model_at_client)
+            
+        # transmit paramaeters NOT attached to the penultimate layer
+        elif self.algorithm in ['fedper', 'fedrep']:
+            partial_model = {k: v for k, v in self.model.state_dict().items() if 'classifier' not in k}
+            federated_model_at_client = self.clients[idx].model.state_dict()
+            federated_model_at_client.update(partial_model)
+            self.clients[idx].model.load_state_dict(federated_model_at_client)
+            
+        # transmit parameters of a federated model only
+        elif self.algorithm in ['ditto', 'apfl', 'pfedme']:
+            pass
         
-        averaged_weights = OrderedDict()
-        for it, idx in tqdm(enumerate(sampled_client_indices), leave=False):
-            local_weights = self.clients[idx].model.state_dict()
-            for key in self.model.state_dict().keys():
-                if it == 0:
-                    averaged_weights[key] = coefficients[it] * local_weights[key]
-                else:
-                    averaged_weights[key] += coefficients[it] * local_weights[key]
-        self.model.load_state_dict(averaged_weights)
+        # transmit parameters of a federated model only (alpha = 0)
+        elif self.algorithm in ['superfed-mm', 'superfed-lm']:
+            global_model = {k: v for k, v in self.model.state_dict().items() if '_1' not in k}
+            federated_model_at_client = copy.deepcopy(self.clients[idx].model.state_dict())
+            federated_model_at_client.update(global_model)
+            self.clients[idx].model.load_state_dict(federated_model_at_client)
+    
+    def evaluate_clients(self, idx, is_finetune):
+        """Call `client_evaluate` function of clients."""
+        loss, acc1, acc5, ece, mce, bri = self.clients[idx].client_evaluate(is_finetune)
+        return loss, acc1, acc5, ece, mce, bri
+    
+    def update_clients(self, idx):
+        """Call `client_update` function of clients."""
+        self.clients[idx].client_update(self._round)
+    
+    def aggregate_model(self, sampled_client_indices, coefficients):
+        """Aggregate the updated and transmitted parameters from each selected client."""
+        # empty model container
+        aggregated_weights = OrderedDict()
+        
+        # aggregate all model parameters
+        if self.algorithm in ['fedavg', 'fedprox']: # aggregate all parameters
+            for it, idx in tqdm(enumerate(sampled_client_indices), leave=False):
+                local_weights = self.clients[idx].model.state_dict()
+                for key in self.model.state_dict().keys():
+                    if it == 0:
+                        averaged_weights[key] = coefficients[it] * local_weights[key]
+                    else:
+                        averaged_weights[key] += coefficients[it] * local_weights[key]
                         
-        message = f"[Round: {str(self._round).zfill(4)}] ...updated weights of {len(sampled_client_indices)} clients are successfully averaged!"
-        print(message); logging.info(message)
-        del message; gc.collect()
-    
-    def evaluate_selected_models(self, sampled_client_indices):
-        """Call "client_evaluate" function of each selected client."""
-        message = f"[Round: {str(self._round).zfill(4)}] Evaluate selected {str(len(sampled_client_indices))} clients' models...!"
-        print(message); logging.info(message)
-        del message; gc.collect()
+        # aggregate paramaeters attached to the penultimate layer
+        elif self.algorithm in ['lg-fedavg']: 
+            for it, idx in tqdm(enumerate(sampled_client_indices), leave=False):
+                local_weights = self.clients[idx].model.state_dict()
+                for key in self.model.state_dict().keys():
+                    if 'classifier' in key:
+                        if it == 0:
+                            averaged_weights[key] = coefficients[it] * local_weights[key]
+                        else:
+                            averaged_weights[key] += coefficients[it] * local_weights[key]
+                    else:
+                        averaged_weights[key] = local_weights[key]
         
-        local_losses, local_accs, local_eces = [], [], []
-        for idx in sampled_client_indices:
-            loss, acc, ece = self.clients[idx].client_evaluate()
-            local_losses.append(loss)
-            local_accs.append(acc)
-            local_eces.append(ece)
-            
-        message = f"[Round: {str(self._round).zfill(4)}] ...finished evaluation of {str(len(sampled_client_indices))} selected clients!"
-        print(message); logging.info(message)
-        del message; gc.collect()
+        # aggregate paramaeters NOT attached to the penultimate layer
+        elif self.algorithm in ['fedper', 'fedrep']:
+            for it, idx in tqdm(enumerate(sampled_client_indices), leave=False):
+                local_weights = self.clients[idx].model.state_dict()
+                for key in self.model.state_dict().keys():
+                    if 'classifier' not in key:
+                        if it == 0:
+                            averaged_weights[key] = coefficients[it] * local_weights[key]
+                        else:
+                            averaged_weights[key] += coefficients[it] * local_weights[key]
+                    else:
+                        averaged_weights[key] = local_weights[key]
+                        
+        # aggregate parameters of a federated model only  
+        elif self.algorithm in ['ditto', 'apfl', 'pfedme']:
+            pass
         
-        return local_losses, local_accs, local_eces
+        # aggregate parameters of a federated model only (alpha = 0)
+        elif self.algorithm in ['superfed-mm', 'superfed-lm']:
+            for it, idx in tqdm(enumerate(sampled_client_indices), leave=False):
+                local_weights = self.clients[idx].model.state_dict()
+                for key in self.model.state_dict().keys():
+                    if '_1' not in key:
+                        if it == 0:
+                            averaged_weights[key] = coefficients[it] * local_weights[key]
+                        else:
+                            averaged_weights[key] += coefficients[it] * local_weights[key]
+                    else:
+                        averaged_weights[key] = local_weights[key]
+        
+        # replace the model in the server
+        self.model.load_state_dict(averaged_weights)
 
     def train_federated_model(self):
         """Do federated training."""
-        
-        """
-        1. Sample clients
-        """
-        # select pre-defined fraction of clients randomly
+        #####################
+        # 1. sample clients #
+        #####################
         sampled_client_indices = self.sample_clients()
         
-        
-        
-        """
-        2. Broadcast model
-        """
-        # send global model to the selected clients
-        self.transmit_model(sampled_client_indices)
+        # notice
+        message = f'[INFO] [Round: {str(self._round).zfill(4)}] ...selected clients!'
+        print(message); logging.info(message); del message; gc.collect()
         
         
         
-        """
-        3. Evaluate clients with global model
-        """
-        # evaluate selected clients with local dataset (i.e., initial performance)
-        #if self._round == self.num_rounds:
-        if self._round % 100 == 0:
-            losses, accs, eces = self.evaluate_selected_models([i for i in range(self.num_clients)])
-            #losses, accs, eces = self.evaluate_selected_models(sampled_client_indices)
-            visualize_metrics(self.writer, self._round, losses, "initial loss")
-            visualize_metrics(self.writer, self._round, accs, "initial accuracy")
-            visualize_metrics(self.writer, self._round, eces, "expected calibration errors")
+        ###############################
+        # 2. broadcast a global model #
+        ###############################
+        _ = Parallel(n_jobs=os.cpu_count() - 1, prefer='threads')(delayed(self.transmit_model)(idx) for idx in tqdm(sampled_client_indices, desc='[INFO] ...transmit global models to clients!'))
+        
+        # notice
+        message = f'[INFO] [Round: {str(self._round).zfill(4)}] ...successfully transmitted models to {str(len(sampled_client_indices))} selected clients!'
+        print(message); logging.info(message); del message; gc.collect()
+        
+        
+        
+        ##################################################################
+        # 3. evaluate global model's baseline performance at each client #
+        ##################################################################
+        if (self._round % self.args.eval_every == 0) or (self._round == self.num_rounds):
+            base_loss, base_acc1, base_acc5, base_ece, base_mce, base_bri = Parallel(n_jobs=os.cpu_count() - 1, prefer='threads')(delayed(self.evaluate_clients)(idx, False) for idx in tqdm(range(len(self.num_clients)), desc='[INFO] ...evaluate a global model in all clients!'))
             
-            loss_mean, loss_std = torch.Tensor(losses).mean(0).numpy()[::-1], torch.Tensor(losses).std(0).numpy()[::-1]
-            acc_mean, acc_std = torch.Tensor(accs).mean(0).numpy()[::-1], torch.Tensor(accs).std(0).numpy()[::-1]
-            ece_mean, ece_std = torch.Tensor(eces).mean(0).numpy()[::-1], torch.Tensor(eces).std(0).numpy()[::-1]
+            # record metrics and loss
+            if base_loss[0] is not None: 
+                base_loss = torch.tensor(base_loss)
+                self.results['base_eval_loss_mean'].append(base_loss.mean()); self.results['base_eval_loss_std'].append(base_loss.std())
+                self.writer.add_scalars(
+                    'Loss',
+                    {f'[{self.args.exp_name}] {self.algorithm}_{self.args.dataset}_{self.model.__class__.__name__}_base_loss_mean': base_loss.mean()},
+                    self._round // self.args.eval_every
+                )
+            if base_acc1[0] is not None: 
+                base_acc1 = torch.tensor(base_acc1)
+                self.results['base_eval_acc1_mean'].append(base_acc1.mean()); self.results['base_eval_acc1_std'].append(base_acc1.std())
+                self.writer.add_scalars(
+                    'Accuracy',
+                    {f'[{self.args.exp_name}] {self.algorithm}_{self.args.dataset}_{self.model.__class__.__name__}_base_top1_acc_mean': base_acc1.mean()},
+                    self._round // self.args.eval_every
+                )
+            if base_acc5[0] is not None: 
+                base_acc5 = torch.tensor(base_acc5)
+                self.results['base_eval_acc5_mean'].append(base_acc5.mean()); self.results['base_eval_acc5_std'].append(base_acc5.std())
+                self.writer.add_scalars(
+                    'Accuracy',
+                    {f'[{self.args.exp_name}] {self.algorithm}_{self.args.dataset}_{self.model.__class__.__name__}_base_top5_acc_mean': base_acc5.mean()},
+                    self._round // self.args.eval_every
+                )
+            if base_ece[0] is not None: 
+                base_ece = torch.tensor(base_ece)
+                self.results['base_eval_ece_mean'].append(base_ece.mean()); self.results['base_eval_ece_std'].append(base_ece.std())
+                self.writer.add_scalars(
+                    'Expected Calibration Error',
+                    {f'[{self.args.exp_name}] {self.algorithm}_{self.args.dataset}_{self.model.__class__.__name__}_base_ece_mean': base_ece.mean()},
+                    self._round // self.args.eval_every
+                )
+            if base_mce[0] is not None: 
+                base_mce = torch.tensor(base_mce)
+                self.results['base_eval_mce_mean'].append(base_mce.mean()); self.results['base_eval_mce_std'].append(base_mce.std())
+                self.writer.add_scalars(
+                    'Maximum Calibration Error',
+                    {f'[{self.args.exp_name}] {self.algorithm}_{self.args.dataset}_{self.model.__class__.__name__}_base_mce_mean': base_mce.mean()},
+                    self._round // self.args.eval_every
+                )
+            if base_bri[0] is not None: 
+                base_bri = torch.tensor(base_bri)
+                self.results['base_eval_bri_mean'].append(base_bri.mean()); self.results['base_eval_bri_std'].append(base_bri.std())
+                self.writer.add_scalars(
+                    'Brier Score',
+                    {f'[{self.args.exp_name}] {self.algorithm}_{self.args.dataset}_{self.model.__class__.__name__}_base_bri_mean': base_bri.mean()},
+                    self._round // self.args.eval_every
+                )
             
-            self.results['init_loss_mean'].append(loss_mean)
-            self.results['init_loss_std'].append(loss_std)
-            self.results['init_acc_mean'].append(acc_mean)
-            self.results['init_acc_std'].append(acc_std)
-            self.results['init_ece_mean'].append(ece_mean)
-            self.results['init_ece_std'].append(ece_std)
+            # notice
+            message = f'[INFO] [Round: {str(self._round).zfill(4)}] ...finished baseline evaluation of all clients!'
+            print(message); logging.info(message); del message; gc.collect()
         
-        """
-        4. Update clients' model
-        """
-        # updated selected clients with local dataset
-        with pool.ThreadPool(processes=cpu_count() - 1) as workhorse:
-            selected_total_size = workhorse.map(self.mp_update_selected_clients, sampled_client_indices)
-        selected_total_size = sum(selected_total_size)
-
-        """
-        5. Average model
-        """
+        
+        
+        ###########################
+        # 4. update client models #
+        ###########################
+        _ = Parallel(n_jobs=os.cpu_count() - 1, prefer='threads')(delayed(self.update_clients)(idx) for idx in tqdm(sampled_client_indices, desc='[INFO] ...update models of selected clients!'))
+        
+        # notice
+        message = f'[INFO] [Round: {str(self._round).zfill(4)}] ...{len(sampled_client_indices)} clients are selected and updated!'
+        print(message); logging.info(message); del message; gc.collect()
+        
+        
+        
+        ##############################
+        # 5. aggregate client models #
+        #############################
         # calculate averaging coefficient of weights
         mixing_coefficients = [len(self.clients[idx]) / selected_total_size for idx in sampled_client_indices]
 
         # average each updated model parameters of the selected clients and update the global model
         self.average_model(sampled_client_indices, mixing_coefficients)
         
-        """
-        6. Evaluate clients with personalized model after personalized update (not used for this setting)
-        """
-        if self._round > self.num_rounds:
-            # personalized update
-            _ = self.update_selected_clients([i for i in range(self.num_clients)], epoch=self.per_epoch, lr=self.per_lr)
-
-            # evaluate selected clients with local dataset (i.e., personalized performance)
-            losses, accs, eces = self.evaluate_selected_models([i for i in range(self.num_clients)])
-            visualize_metrics(self.writer, self._round, losses, "personalized loss")
-            visualize_metrics(self.writer, self._round, accs, "personalized accuracy")
-            visualize_metrics(self.writer, self._round, eces, "expected calibration errors")
-
-            loss_mean, loss_std = torch.Tensor(losses).mean(0).numpy()[::-1], torch.Tensor(losses).std(0).numpy()[::-1]
-            acc_mean, acc_std = torch.Tensor(accs).mean(0).numpy()[::-1], torch.Tensor(accs).std(0).numpy()[::-1]
-            ece_mean, ece_std = torch.Tensor(eces).mean(0).numpy()[::-1], torch.Tensor(eces).std(0).numpy()[::-1]
-            
-            self.results['per_loss_mean'].append(loss_mean)
-            self.results['per_loss_std'].append(loss_std)
-            self.results['per_acc_mean'].append(acc_mean)
-            self.results['per_acc_std'].append(acc_std)
-            self.results['per_ece_mean'].append(ece_mean)
-            self.results['per_ece_std'].append(ece_std)
+        # notice
+        message = f'[INFO] [Round: {str(self._round).zfill(4)}] ...updated weights of {len(sampled_client_indices)} clients are successfully averaged!'
+        print(message); logging.info(message); del message; gc.collect()
         
+        
+        
+        #########################################################################
+        # 6. evaluate global model's personalization performance at each client #
+        #########################################################################
+        if (self._round % self.args.eval_every == 0) or (self._round == self.num_rounds):
+            # record metrics and loss
+            per_loss, per_acc1, per_acc5, per_ece, per_mce, per_bri = Parallel(n_jobs=os.cpu_count() - 1, prefer='threads')(delayed(self.evaluate_clients)(idx, True) for idx in tqdm(range(len(self.num_clients)), desc='[INFO] ...evaluate a global model in all clients!'))
+            
+            # record metrics and loss
+            if per_loss[0] is not None:
+                per_loss = torch.tensor(per_loss)
+                self.results['per_eval_loss_mean'].append(per_loss.mean()); self.results['per_eval_loss_std'].append(per_loss.std())
+                self.writer.add_scalars(
+                    'Loss',
+                    {f'[{self.args.exp_name}] {self.algorithm}_{self.args.dataset}_{self.model.__class__.__name__}_per_loss_mean': per_loss.mean()},
+                    self._round // self.args.eval_every
+                )
+            if per_acc1[0] is not None: 
+                per_acc = torch.tensor(per_acc)
+                self.results['per_eval_acc1_mean'].append(per_acc1.mean()); self.results['per_eval_acc1_std'].append(per_acc1.std())
+                self.writer.add_scalars(
+                    'Accuracy',
+                    {f'[{self.args.exp_name}] {self.algorithm}_{self.args.dataset}_{self.model.__class__.__name__}_per_top1_acc_mean': per_acc1.mean()},
+                    self._round // self.args.eval_every
+                )
+            if per_acc5[0] is not None: 
+                per_acc5 = torch.tensor(per_acc5)
+                self.results['per_eval_acc5_mean'].append(per_acc5.mean()); self.results['per_eval_acc5_std'].append(per_acc5.std())
+                self.writer.add_scalars(
+                    'Accuracy',
+                    {f'[{self.args.exp_name}] {self.algorithm}_{self.args.dataset}_{self.model.__class__.__name__}_per_top5_acc_mean': per_acc5.mean()},
+                    self._round // self.args.eval_every
+                )
+            if per_ece[0] is not None: 
+                per_ece = torch.tesnor(per_ece)
+                self.results['per_eval_ece_mean'].append(per_ece.mean()); self.results['per_eval_ece_std'].append(per_ece.std())
+                self.writer.add_scalars(
+                    'Expected Calibration Error',
+                    {f'[{self.args.exp_name}] {self.algorithm}_{self.args.dataset}_{self.model.__class__.__name__}_per_ece_mean': per_ece.mean()},
+                    self._round // self.args.eval_every
+                )
+            if per_mce[0] is not None: 
+                per_mce = torch.tensor(per_mce)
+                self.results['per_eval_mce_mean'].append(per_mce.mean()); self.results['per_eval_mce_std'].append(per_mce.std())
+                self.writer.add_scalars(
+                    'Maximum Calibration Error',
+                    {f'[{self.args.exp_name}] {self.algorithm}_{self.args.dataset}_{self.model.__class__.__name__}_per_mce_mean': per_mce.mean()},
+                    self._round // self.args.eval_every
+                )
+            if per_bri[0] is not None: 
+                per_bri = torch.tensor(per_bri)
+                self.results['per_eval_bri_mean'].append(per_bri.mean()); self.results['per_eval_bri_std'].append(per_bri.std())
+                self.writer.add_scalars(
+                    'Brier Score',
+                    {f'[{self.args.exp_name}] {self.algorithm}_{self.args.dataset}_{self.model.__class__.__name__}_per_bri_mean': per_bri.mean()},
+                    self._round // self.args.eval_every
+                )
+            
+            # notice
+            message = f'[INFO] [Round: {str(self._round).zfill(4)}] ...finished personalization evaluation of all clients!'
+            print(message); logging.info(message); del message; gc.collect()
+            
+            # calculate delta metric
+            
+            return 
+            
+    @torch.no_grad()
     def evaluate_global_model(self):
-        """Evaluate the global model using the global holdout dataset (self.data)."""
+        """Evaluate the global model at the server using the global holdout dataset if possible."""
+        try:
+            assert self.server_testset is not None
+        except:
+            return None
+        
         self.model.eval()
-        self.model.to(self.device)
-        DataLoader(test_dataset, batch_size=self.batch_size, shuffle=False, drop_last=True)
+        self.model.to(self.args.device)
+        
+        torch.utils.data.DataLoader(test_dataset, batch_size=self.batch_size, shuffle=False, drop_last=True)
         best_acc, best_loss, best_topk = 0, 1000, 0
         for alpha in [0.0]:
             # set alpha for inference
@@ -334,7 +414,7 @@ class Server(object):
             self.model.to("cpu")
         return best_loss, best_acc, best_topk
 
-    def fit(self, exp_name):
+    def fit(self):
         """Execute the whole process of the federated learning."""
         for r in range(self.num_rounds):
             self._round = r + 1

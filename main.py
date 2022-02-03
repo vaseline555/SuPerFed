@@ -42,7 +42,6 @@ def main(args, writer):
     args.K = len(client_datasets)
     
     
-    
     #################
     # Prepare model #
     #################
@@ -56,7 +55,6 @@ def main(args, writer):
         block = None
     model = getattr(models, args.model_name)(builder, args, block)
     model = initiate_model(model, args)
-    
     
     
     ##############
@@ -93,24 +91,24 @@ if __name__ == "__main__":
     parser.add_argument('--tb_host', help='TensorBoard host address', type=str, default='0.0.0.0')
     
     # dataset related arguments
-    parser.add_argument('--dataset', help='name of dataset to use for an experiment: [MNIST|CIFAR10|CIFAR100|TinyImageNet|FEMNIST|Shakespeare|]', type=str, choices=['MNIST', 'CIFAR10', 'CIFAR100', 'TinyImageNet', 'FEMNIST', 'Shakespeare'])
-    parser.add_argument('--is_small', help='indicates the size of inputs is small (if passed)', default='store_true')
+    parser.add_argument('--dataset', help='name of dataset to use for an experiment: [MNIST|CIFAR10|CIFAR100|TinyImageNet|FEMNIST|Shakespeare|]', type=str, choices=['MNIST', 'CIFAR10', 'CIFAR100', 'TinyImageNet', 'FEMNIST', 'Shakespeare'], required=True)
+    parser.add_argument('--is_small', help='indicates the size of inputs is small (if passed)', action='store_true')
     parser.add_argument('--in_channels', help='input channels for image dataset (ignored when `Shakespeare` dataset is used)', type=int, default=3)
     parser.add_argument('--num_classes', help='number of classes to predict (ignored when `Shakespeare` dataset is used)', type=int, default=10)
     parser.add_argument('--test_fraction', help='fraction of test dataset at each client', type=float, default=0.2)
     
     # label noise experiment
-    parser.add_argument('--label_noise', help='experiment under the simulation of a label noise (if passed)', default='store_true')
+    parser.add_argument('--label_noise', help='experiment under the simulation of a label noise (if passed)', action='store_true')
     parser.add_argument('--noise_type', help='type of a label noise: [pair|symmetric]', type=str, choices=['pair', 'symmetric'])
     parser.add_argument('--noise_rate', help='label noise ratio (0 ~ 1) valid only when `label-noise` argument is passed', type=float, default=0.2)
     
     # dataset split scenario
-    parser.add_argument('--split_type', help='type of an expriment to conduct', type=str, choices=['iid', 'pathological', 'dirichlet', 'realistic'])
+    parser.add_argument('--split_type', help='type of an expriment to conduct', type=str, choices=['iid', 'pathological', 'dirichlet', 'realistic'], required=True)
     parser.add_argument('--shard_size', help='size of one shard to be assigned to each client; used only when `algo_type=pathological`', type=int)
     parser.add_argument('--alpha', help='shape parameter for a Dirichlet distribution used for splitting data in non-IID manner; used only when `algo_type=dirichlet`', type=float, default=0.5)
     
     # federated learning arguments
-    parser.add_argument('--algorithm', help='type of an algorithm to use', type=str, choices=['fedavg', 'fedprox', 'lg-fedavg', 'fedper', 'fedrep', 'ditto', 'apfl', 'pfedme', 'superfed-mm', 'superfed-lm'])
+    parser.add_argument('--algorithm', help='type of an algorithm to use', type=str, choices=['fedavg', 'fedprox', 'lg-fedavg', 'fedper', 'fedrep', 'ditto', 'apfl', 'pfedme', 'superfed-mm', 'superfed-lm'], required=True)
     #parser.add_argument('--local_tuning', help='use local fine-tuning for a personalization (if positive value passed)', type=int, default=0)
     parser.add_argument('--C', help='sampling fraction of clietns per each round', type=float, default=0.1)
     parser.add_argument('--K', help='number of total cilents', type=int, default=100)
@@ -118,6 +116,7 @@ if __name__ == "__main__":
     parser.add_argument('--E', help='number of local epochs', type=int, default=10)
     parser.add_argument('--B', help='batch size for local update in each client', type=int, default=10)
     parser.add_argument('--L', help='when to start local training round (start local model training from `floor(L * R)` round)', type=float, default=0.8)
+    parser.add_argument('--eval_every', help='evaluate at every `eval_every` round', type=int, default=100)
     
     # optimization related arguments
     parser.add_argument('--lr', help='learning rate of each client', type=float, default=0.01)
@@ -141,7 +140,7 @@ if __name__ == "__main__":
     # check if arguments are specified correctly
     if 'Lines' in args.fc_type:
         assert len(args.init_seed) <= 2, '[ERROR] number of `init_seed` should be less than or equal to 2!'
-    
+        
     # make path for saving losses & metrics
     if not os.path.exists(args.result_path):
         os.makedirs(os.path.join(args.result_path, f'{args.exp_name}_{args.global_seed}'))
@@ -170,7 +169,7 @@ if __name__ == "__main__":
     message = '\n[WELCOME] Configurations...'
     print(message); logging.info(message)
     for arg in vars(args):
-        print(f'\t *{arg}: {getattr(args, arg)}')
+        print(f'\t * {str(arg).upper()}: {getattr(args, arg)}')
         logging.info(arg); logging.info(getattr(args, arg))
     print()
     

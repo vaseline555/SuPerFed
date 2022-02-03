@@ -7,7 +7,7 @@ import torch
 import torch.nn as nn
 
 from torch.utils.data import DataLoader
-from utils import init_weights
+from .utils import init_weights
 logger = logging.getLogger(__name__)
 
 
@@ -36,7 +36,10 @@ class Client(object):
         self.nu = args.nu # connectivity regularization
         self.lr = args.lr
         self.lr_decay = args.lr_decay
-        
+    
+    def __len__(self):
+        return len(self.training_set)
+    
     @property
     def model(self):
         return self._model
@@ -58,23 +61,23 @@ class Client(object):
         return self._criterion
 
     @criterion.setter
-    def optimizer(self, criterion):
+    def criterion(self, criterion):
         self._criterion = criterion
-        
+    
     def initialize_model(self):
         # initialize model
         if self.args.algorithm == 'SuPerFed':
-            self._model = init_weights(model, self.args.init_type, self.args.init_gain, [self.args.global_seed, self.client_id])
+            self._model = init_weights(self.model, self.args.init_type, self.args.init_gain, [self.args.global_seed, self.client_id])
         else:
-             self._model = init_weights(model, self.args.init_type, self.args.init_gain, [self.args.global_seed])
+             self._model = init_weights(self.model, self.args.init_type, self.args.init_gain, [self.args.global_seed])
 
-    def client_update(self, current_round, start_local_training=False):
+    def client_update(self, current_round):
         training_dataloader = torch.utils.data.DataLoader(self.training_set, batch_size=self.batch_size, shuffle=True)
         
         if self.mu > 0:
-        # fix global model for calculating a proximity term
-        self.global_model = copy.deepcopy(self.model)
-        self.global_model.to(self.device)
+            # fix global model for calculating a proximity term
+            self.global_model = copy.deepcopy(self.model)
+            self.global_model.to(self.device)
         
         for param in self.global_model.parameters():
             param.requires_grad = False
@@ -140,7 +143,10 @@ class Client(object):
         self.model.to("cpu")
         self.model.eval()
  
-    def client_evaluate(self):
+    def client_evaluate(self, is_finetune):
+        if is_finetune:
+            for epoch in range(1):
+                self.client_update()
         self.test_dataloader = DataLoader(self.test_data, batch_size=self.batch_size, shuffle=False, drop_last=True)
         losses, accs, eces = [], [], []
         
