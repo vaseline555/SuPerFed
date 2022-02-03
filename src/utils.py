@@ -1,5 +1,7 @@
 import os
-import logging
+import gc
+import copy
+import json
 import torch
 import torchvision
 import numpy as np
@@ -7,8 +9,6 @@ import numpy as np
 from tqdm import tqdm
 from joblib import Parallel, delayed
 from .dataset import MNISTDataset, CIFARDataset, NoisyMNISTDataset, NoisyCIFARDataset, TinyImageNetDataset, FEMNISTDataset, ShakespeareDataset
-
-logger = logging.getLogger(__name__)
 
 
 
@@ -457,7 +457,7 @@ class CalibrationError(torch.nn.Module):
         self.bin_uppers = bin_boundaries[1:]
 
     def forward(self, logits, labels):
-        softmaxes = F.softmax(logits, dim=1)
+        softmaxes = torch.nn.functional.softmax(logits, dim=1)
         confidences, predictions = torch.max(softmaxes, 1)
         accuracies = predictions.eq(labels)
 
@@ -481,53 +481,62 @@ class CalibrationError(torch.nn.Module):
 ###########################
 # Record metrics & losses #
 ###########################
-def record_results(args, writer, mode, step, loss, acc1, acc5, ece, mce):
-    # convert to tensors
-    loss = torch.tensor(loss)
-    acc1 = torch.tensor(acc1)
-    acc5 = torch.tensor(acc5)
-    ece = torch.tesnor(ece)
-    mce = torch.tensor(mce)
-
+def record_results(args, writer, results, mode, step, loss, acc1, acc5, ece, mce):
     # save as results
-    self.results[f'{mode}_loss_mean'].append(loss.mean()); self.results[f'{mode}_loss_std'].append(loss.std())
-    self.results[f'{mode}_acc1_mean'].append(acc1.mean()); self.results[f'{mode}_acc1_std'].append(acc1.std())
-    self.results[f'{mode}_acc5_mean'].append(acc5.mean()); self.results[f'{mode}_acc5_std'].append(acc5.std())
-    self.results[f'{mode}_ece_mean'].append(ece.mean()); self.results[f'{mode}_ece_std'].append(ece.std())
-    self.results[f'{mode}_mce_mean'].append(per_mce.mean()); self.results[f'{mode}_mce_std'].append(per_mce.std())
+    results[f'{mode}_loss_mean'].append(loss.mean()); results[f'{mode}_loss_std'].append(loss.std())
+    results[f'{mode}_acc1_mean'].append(acc1.mean()); results[f'{mode}_acc1_std'].append(acc1.std())
+    results[f'{mode}_acc5_mean'].append(acc5.mean()); results[f'{mode}_acc5_std'].append(acc5.std())
+    results[f'{mode}_ece_mean'].append(ece.mean()); results[f'{mode}_ece_std'].append(ece.std())
+    results[f'{mode}_mce_mean'].append(mce.mean()); results[f'{mode}_mce_std'].append(mce.std())
 
     # record metrics and loss
     writer.add_scalars(
-        'Loss',
+        f'Loss_{mode}',
         {f'[{args.exp_name}] {args.algorithm}_{args.dataset}_{args.model_name}_{mode}_loss_mean': loss.mean()},
         step
     )
     writer.add_scalars(
-        'Accuracy',
+        f'Top 1 Accuracy_{mode}',
         {f'[{args.exp_name}] {args.algorithm}_{args.dataset}_{args.model_name}_{mode}_top1_acc_mean': acc1.mean()},
         step
     )
     writer.add_scalars(
-        'Accuracy',
+        f'Top 5 Accuracy_{mode}',
         {f'[{args.exp_name}] {args.algorithm}_{args.dataset}_{args.model_name}_{mode}_top5_acc_mean': acc5.mean()},
         step
     )
     writer.add_scalars(
-        'Expected Calibration Error',
+        f'Expected Calibration Error_{mode}',
         {f'[{args.exp_name}] {args.algorithm}_{args.dataset}_{args.model_name}_{mode}_ece_mean': ece.mean()},
         step
     )
     writer.add_scalars(
-        'Maximum Calibration Error',
+        f'Maximum Calibration Error_{mode}',
         {f'[{args.exp_name}] {args.algorithm}_{args.dataset}_{args.model_name}_{mode}_mce_mean': mce.mean()},
         step
     )
-    return loss, acc1, acc5, ece, mce
+    return results, loss, acc1, acc5, ece, mce
 
 
 
 ######################
 # Plot delta metrics #
 ######################
-def plot_delta(delta):
-    pass
+def plot_delta_histogram(args, writer, mode, step, delta):
+    color_map - {'Loss': 'b', 'Top 1 Accuracy': 'g', 'Top 5 Accuracy': 'r', 'Expected Calibration Error': 'c', 'Maximum Calibration Error': 'm'}
+    
+    # make figure
+    fig, ax = plt.subplots(figsize=(6, 3))
+    ax.hist(delta.view(1, -1), color=color_map[mode])
+    ax.set_title(f'Delta Histogram of {mode}')
+    
+    # record
+    writer.add_figure(
+        f'Histogram_{mode}',
+        {f'[{args.exp_name}] {args.algorithm}_{args.dataset}_{args.model_name}_{mode}': fig},
+        step,
+        close=True
+    )
+    
+    # save
+    plt.savefig(f'./{args.plot_path}/{args.exp_name}_{args.global_seed}/delta_histogram_{mode}_{str(int(step * self.args.eval_every)).zfill(4)}.png')

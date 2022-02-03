@@ -4,7 +4,6 @@ import json
 import time
 import torch
 import random
-import logging
 import argparse
 import threading
 import numpy as np
@@ -87,12 +86,13 @@ if __name__ == "__main__":
     parser.add_argument('--data_path', help='data path', type=str, default='./data')
     parser.add_argument('--log_path', help='log path', type=str, default='./log')
     parser.add_argument('--result_path', help='result path', type=str, default='./result')
+    parser.add_argument('--plot_path', help='plot path', type=str, default='./plot')
     parser.add_argument('--tb_port', help='TensorBoard port number', type=int, default=6006)
     parser.add_argument('--tb_host', help='TensorBoard host address', type=str, default='0.0.0.0')
     
     # dataset related arguments
     parser.add_argument('--dataset', help='name of dataset to use for an experiment: [MNIST|CIFAR10|CIFAR100|TinyImageNet|FEMNIST|Shakespeare|]', type=str, choices=['MNIST', 'CIFAR10', 'CIFAR100', 'TinyImageNet', 'FEMNIST', 'Shakespeare'], required=True)
-    parser.add_argument('--is_small', help='indicates the size of inputs is small (if passed)', action='store_true')
+    parser.add_argument('--is_small', help='indicates the size of inputs is small; only used for MobileNetv2 (if passed)', action='store_true')
     parser.add_argument('--in_channels', help='input channels for image dataset (ignored when `Shakespeare` dataset is used)', type=int, default=3)
     parser.add_argument('--num_classes', help='number of classes to predict (ignored when `Shakespeare` dataset is used)', type=int, default=10)
     parser.add_argument('--test_fraction', help='fraction of test dataset at each client', type=float, default=0.2)
@@ -144,6 +144,10 @@ if __name__ == "__main__":
     # make path for saving losses & metrics
     if not os.path.exists(args.result_path):
         os.makedirs(os.path.join(args.result_path, f'{args.exp_name}_{args.global_seed}'))
+    
+    # make path for saving plots
+    if not os.path.exists(args.plot_path):
+        os.makedirs(os.path.join(args.plot_path, f'{args.exp_name}_{args.global_seed}'))
         
     # define path to save a log
     args.log_path = f'{args.log_path}/{args.dataset}/{args.exp_name}'
@@ -155,29 +159,16 @@ if __name__ == "__main__":
         args=([args.log_path, args.tb_port, args.tb_host])
         ).start()
     time.sleep(3.0)
-
-    # set global logger
-    logger = logging.getLogger(__name__)
-    logging.basicConfig(
-        filename=os.path.join(args.log_path, f'{args.exp_name}.log'),
-        level=logging.INFO,
-        format='[%(levelname)s](%(asctime)s) %(message)s',
-        datefmt='%Y/%m/%d/ %I:%M:%S %p'
-    )
     
     # display and log experiment configuration
-    message = '\n[WELCOME] Configurations...'
-    print(message); logging.info(message)
+    print('\n[WELCOME] Configurations...')
     for arg in vars(args):
         print(f'\t * {str(arg).upper()}: {getattr(args, arg)}')
-        logging.info(arg); logging.info(getattr(args, arg))
-    print()
     
     # run main program
     main(args, writer)
     
     # bye!
-    message = '[INFO] ...done federated learning!\n[INFO] ...exit program!'
-    print(message); logging.info(message)
-    time.sleep(3); sys.exit(0)
+    print('[INFO] ...done federated learning!\n[INFO] ...exit program!')
+    sys.exit(0)
 

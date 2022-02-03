@@ -1,45 +1,91 @@
 import torch
-import logging
 
 from .utils import get_accuracy, CalibrationError
-logger = logging.getLogger(__name__)
 
 
 
 ###############################
 # Update models in the client #
 ###############################
-def fedavg_update(args, model, criterion, dataset, optimizer, lr):
-    dataloader = torch.utils.data.DataLoader(dataset, batch_size=args.batch_size, shuffle=True)
+def fedavg_update(identifier, args, model, criterion, dataset, optimizer, lr, epochs):
+    # prepare model
+    model.train()
+    model.to(args.device)
+    
+    # make dataloader
+    dataloader = torch.utils.data.DataLoader(dataset, batch_size=args.B, shuffle=True)
+    
+    # prepare optimizer       
+    optimizer = optimizer(model.parameters(), lr=lr, momentum=0.9)
+    
+    # main loop
+    for e in range(args.E if epochs is None else epochs):
+        # track loss and metrics
+        losses, acc1, acc5, ece, mce = 0, 0, 0, 0, 0
+        for inputs, targets in dataloader:
+            inputs, targets = inputs.to(args.device), targets.to(args.device)
+ 
+            # inference
+            outputs = model(inputs)
+            loss = criterion()(outputs, targets)
 
-def fedprox_update(args, model, criterion, dataset, optimizer, lr):
+            # update
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step() 
+            
+            # get loss
+            losses += loss.item()
+            
+            # get accuracy
+            accs = get_accuracy(outputs, targets, (1, 5))
+            acc1 += accs[0].item(); acc5 += accs[-1].item()
+
+            # get calibration errors
+            ces = CalibrationError()(outputs, targets)
+            ece += ces[0].item(); mce += ces[-1].item()
+
+            # clear cache
+            if args.device == 'cuda': torch.cuda.empty_cache()
+    else:
+        losses /= len(dataloader)
+        acc1 /= len(dataloader)
+        acc5 /= len(dataloader)
+        ece /= len(dataloader)
+        mce /= len(dataloader)
+        print(f'[INFO] [TRAINING - CLIENT ({str(identifier).zfill(4)})] Loss: {losses:.4f}, Top1 Acc.: {acc1:.4f}, Top5 Acc.: {acc5:.4f}, ECE: {ece:.4f}, MCE: {mce:.4f}')
+        
+        model.to('cpu')
+    return model
+
+def fedprox_update(args, model, criterion, dataset, optimizer, lr, epochs, current_round):
     pass
 
-def lg_fedavg_update(args, model, criterion, dataset, optimizer, lr):
+def lg_fedavg_update(args, model, criterion, dataset, optimizer, lr, epochs, current_round):
     pass
 
-def fedper_update(args, model, criterion, dataset, optimizer, lr):
+def fedper_update(args, model, criterion, dataset, optimizer, lr, epochs, current_round):
     pass
 
-def fedrep_update(args, model, criterion, dataset, optimizer, lr):
+def fedrep_update(args, model, criterion, dataset, optimizer, lr, epochs, current_round):
     pass
 
-def ditto_update(args, model, criterion, dataset, optimizer, lr):
+def ditto_update(args, model, criterion, dataset, optimizer, lr, epochs, current_round):
     pass
 
-def pfedme_update(args, model, criterion, dataset, optimizer, lr):
+def pfedme_update(args, model, criterion, dataset, optimizer, lr, epochs, current_round):
     pass
 
-def l2gd_update(args, model, criterion, dataset, optimizer, lr):
+def l2gd_update(args, model, criterion, dataset, optimizer, lr, epochs, current_round):
     pass
 
-def apfl_update(args, model, criterion, dataset, optimizer, lr):
+def apfl_update(args, model, criterion, dataset, optimizer, lr, epochs, current_round):
     pass
 
-def perfedavg_update(args, model, criterion, dataset, optimizer, lr):
+def perfedavg_update(args, model, criterion, dataset, optimizer, lr, epochs, current_round):
     pass
 
-def superfed_update(args, model, criterion, dataset, optimizer, lr, mode='lm'):
+def superfed_update(args, model, criterion, dataset, optimizer, lr, epoch, current_round, mode='lm'):
     dataloader = torch.utils.data.DataLoader(self.training_set, batch_size=self.batch_size, shuffle=True)
         
     if self.mu > 0:
@@ -116,38 +162,49 @@ def superfed_update(args, model, criterion, dataset, optimizer, lr, mode='lm'):
 # Evaluate models #
 ###################
 @torch.no_grad()
-def basic_evaluate(args, model, criterion, dataset):
+def basic_evaluate(identifier, args, model, criterion, dataset):
+    # prepare model
     model.eval()
     model.to(args.device)
     
-    dataloader = torch.utils.data.DataLoader(dataset, batch_size=args.batch_size, shuffle=False)
-    loss, acc1, acc5, ece, mce = 0, 0, 0, 0, 0
-    with torch.no_grad():
-        for inputs, targets in dataloader:
-            inputs, targets = inputs.to(args.device), targets.to(args.device)
-            # inference
-            outputs = model(inputs)
-            
-            # get loss
-            loss += criterion()(outputs, targets).item()
+    # make dataloader
+    dataloader = torch.utils.data.DataLoader(dataset, batch_size=args.B, shuffle=False)
+    
+    # track loss and metrics
+    losses, acc1, acc5, ece, mce = 0, 0, 0, 0, 0
+    
+    # main loop
+    for inputs, targets in dataloader:
+        # get daata
+        inputs, targets = inputs.to(args.device), targets.to(args.device)
+        
+        # inference
+        outputs = model(inputs)
 
-            # get accuracy
-            accs = get_accuracy(outputs, targets, (1, 5))
-            acc1 += accs[0]; acc5 += accs[-1]
-            
-            # get calibration errors
-            ces = CalibrationError()(outputs, targets)
-            ece += ces[0]; mce += ces[-1]
-            
-            # clear cache
-            if args.device == 'cuda': torch.cuda.empty_cache()
+        # get loss
+        losses += criterion()(outputs, targets).item()
+
+        # get accuracy
+        accs = get_accuracy(outputs, targets, (1, 5))
+        acc1 += accs[0].item(); acc5 += accs[-1].item()
+
+        # get calibration errors
+        ces = CalibrationError()(outputs, targets)
+        ece += ces[0].item(); mce += ces[-1].item()
+
+        # clear cache
+        if args.device == 'cuda': torch.cuda.empty_cache()
+    else:
+        losses /= len(dataloader)
+        acc1 /= len(dataloader)
+        acc5 /= len(dataloader)
+        ece /= len(dataloader)
+        mce /= len(dataloader)
+        if identifier is not None:
+            print(f'[INFO] [EVALUATION - CLIENT ({str(identifier).zfill(4)})] Loss: {losses:.4f}, Top1 Acc.: {acc1:.4f}, Top5 Acc.: {acc5:.4f}, ECE: {ece:.4f}, MCE: {mce:.4f}')
         else:
-            loss /= len(dataloader)
-            acc1 /= len(dataloader)
-            acc5 /= len(dataloader)
-            ece /= len(dataloader)
-            mce /= len(dataloader)
-    return loss, acc1, acc5, ece, mce
+            print(f'[INFO] [EVALUATION - SERVER] Loss: {losses:.4f}, Top1 Acc.: {acc1:.4f}, Top5 Acc.: {acc5:.4f}, ECE: {ece:.4f}, MCE: {mce:.4f}')
+    return losses, acc1, acc5, ece, mce
 
 @torch.no_grad()
 def global_evaluate(args, model, criterion, dataset):

@@ -76,10 +76,10 @@ class BasicBlock(nn.Module):
     def __init__(self, builder, in_channels, out_channels, stride=1, downsample=None):
         super(BasicBlock, self).__init__()        
         self.module = nn.Sequential(
-            builder.conv(in_channels=in_channels, out_channels=out_channels, kernel_size=3, stride=stride),
+            builder.conv(in_channels=in_channels, out_channels=out_channels, kernel_size=3, stride=stride, padding=1),
             builder.bn(out_channels),
             nn.ReLU(inplace=True),
-            builder.conv(in_channels=out_channels, out_channels=out_channels, kernel_size=3),
+            builder.conv(in_channels=out_channels, out_channels=out_channels, kernel_size=3, padding=1),
             builder.bn(out_channels)
         )
         self.downsample = downsample
@@ -98,7 +98,7 @@ class ResNet18(nn.Module):
         
         # input layer
         self.in_conv = nn.Sequential(
-            builder.conv(in_channels=args.in_channels, out_channels=self.base_width, kernel_size=3, stride=2),
+            builder.conv(in_channels=args.in_channels, out_channels=self.base_width, kernel_size=3, stride=2, padding=1),
             builder.bn(self.base_width),
             nn.ReLU(inplace=True)
         )
@@ -178,7 +178,7 @@ class InvertedBlock(nn.Module):
         layers.extend(
             [
                 nn.Sequential( # depthwise convolution
-                    builder.conv(in_channels=in_channels * expansion, out_channels=in_channels * expansion, kernel_size=3, stride=stride, groups=in_channels * expansion),
+                    builder.conv(in_channels=in_channels * expansion, out_channels=in_channels * expansion, kernel_size=3, stride=stride, groups=in_channels * expansion, padding=1),
                     builder.bn(in_channels * expansion),
                     nn.ReLU6(inplace=True)
                 ),
@@ -211,8 +211,8 @@ class MobileNetv2(nn.Module):
         
         # input layer
         self.in_conv = nn.Sequential(
-            builder.conv(in_channels=args.in_channels, out_channels=args.in_channels, kernel_size=3),
-            builder.conv(in_channels=args.in_channels, out_channels=32, kernel_size=3, stride=1 if args.is_small else 2),
+            builder.conv(in_channels=args.in_channels, out_channels=args.in_channels, kernel_size=3, padding=1),
+            builder.conv(in_channels=args.in_channels, out_channels=32, kernel_size=3, stride=1 if args.is_small else 2, padding=1),
             builder.bn(32),
             nn.ReLU6(inplace=True)
         )
