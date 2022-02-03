@@ -8,7 +8,10 @@ import torch.nn as nn
 
 from torch.utils.data import DataLoader
 from .utils import init_weights
+from .algorithm import *
+
 logger = logging.getLogger(__name__)
+
 
 
 class Client(object):
@@ -32,11 +35,9 @@ class Client(object):
         # training related attributes
         self.local_epoch = args.E
         self.batch_size = args.B
-        self.mu = args.mu # proximity regularization
-        self.nu = args.nu # connectivity regularization
         self.lr = args.lr
         self.lr_decay = args.lr_decay
-    
+        
     def __len__(self):
         return len(self.training_set)
     
@@ -66,82 +67,13 @@ class Client(object):
     
     def initialize_model(self):
         # initialize model
-        if self.args.algorithm == 'SuPerFed':
+        if self.args.algorithm in ['superfed-mm', 'superfed-lm']:
             self._model = init_weights(self.model, self.args.init_type, self.args.init_gain, [self.args.global_seed, self.client_id])
         else:
              self._model = init_weights(self.model, self.args.init_type, self.args.init_gain, [self.args.global_seed])
 
     def client_update(self, current_round):
-        training_dataloader = torch.utils.data.DataLoader(self.training_set, batch_size=self.batch_size, shuffle=True)
         
-        if self.mu > 0:
-            # fix global model for calculating a proximity term
-            self.global_model = copy.deepcopy(self.model)
-            self.global_model.to(self.device)
-        
-        for param in self.global_model.parameters():
-            param.requires_grad = False
-
-        # update local model
-        self.model.train()
-        self.model.to(self.device)
-        
-        parameters = list(self.model.named_parameters())
-        parameters_to_opimizer = [v for n, v in parameters if v.requires_grad]            
-        optimizer = self.optimizer(parameters_to_opimizer, lr=self.lr * self.lr_decay**current_round, momentum=0.9)
-
-        flag = False
-        if epoch is None:
-            epoch = self.local_epoch
-        else:
-            flag = True
-        
-        for e in range(epoch):
-            for data, labels in self.training_dataloader:
-                data, labels = data.float().to(self.device), labels.long().to(self.device)
-
-                # mixing models
-                if not start_local_training:
-                    alpha = 0.0
-                else:
-                    if flag:
-                        alpha = 0.5
-                    else:
-                        alpha = np.random.uniform(0.0, 1.0)
-                for m in self.model.modules():
-                    if isinstance(m, nn.Conv2d) or isinstance(m, nn.BatchNorm2d):
-                        setattr(m, f"alpha", alpha)
-
-                # inference
-                outputs = self.model(data)
-                loss = self.criterion()(outputs, labels)
-                
-                # subspace construction
-                if start_local_training:
-                    num, norm1, norm2, cossim = 0., 0., 0., 0.
-                    for m in self.model.modules():
-                        if isinstance(m, nn.Conv2d) or isinstance(m, nn.BatchNorm2d) and hasattr(m, 'weight1'):
-                            num += (m.weight * m.weight1).sum()
-                            norm1 += m.weight.pow(2).sum()
-                            norm2 += m.weight1.pow(2).sum()
-                    cossim = self.beta * (num.pow(2) / (norm1 * norm2))
-                    loss += cossim
-
-                # proximity regularization
-                prox = 0.
-                for (n, w), w_g in zip(self.model.named_parameters(), self.global_model.parameters()):
-                    if "weight1" not in n:
-                        prox += (w - w_g).norm(2)
-                loss += self.mu * (1 - alpha) * prox
-
-                # update
-                optimizer.zero_grad()
-                loss.backward()
-                optimizer.step() 
-                
-                if self.device == "cuda": torch.cuda.empty_cache() 
-        self.model.to("cpu")
-        self.model.eval()
  
     def client_evaluate(self, is_finetune):
         if is_finetune:

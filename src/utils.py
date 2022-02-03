@@ -431,11 +431,11 @@ def get_accuracy(output, target, topk=(1, 5)):
             list_topk_accs.append(topk_acc.detach().cpu())
         return torch.stack(list_topk_accs)  # list of topk accuracies for entire batch [topk1, topk2, ... etc]
 
-# exepcted calibration error
-class ECELoss(torch.nn.Module):
+# calibration error
+class CalibrationError(torch.nn.Module):
     """
     Credits to: https://github.com/gpleiss/temperature_scaling/blob/master/temperature_scaling.py
-    Calculates the Expected Calibration Error of a model.
+    Calculates the Expected Calibration Error & Maximum Calibration Error of a model.
     (This isn't necessary for temperature scaling, just a cool metric).
     The input to this loss is the logits of a model, NOT the softmax scores.
     This divides the confidence outputs into equally-sized interval bins.
@@ -451,7 +451,7 @@ class ECELoss(torch.nn.Module):
         """
         n_bins (int): number of confidence interval bins
         """
-        super(ECELoss, self).__init__()
+        super(CalibrationError, self).__init__()
         bin_boundaries = torch.linspace(0, 1, n_bins + 1)
         self.bin_lowers = bin_boundaries[:-1]
         self.bin_uppers = bin_boundaries[1:]
@@ -462,6 +462,7 @@ class ECELoss(torch.nn.Module):
         accuracies = predictions.eq(labels)
 
         ece = torch.zeros(1, device=logits.device)
+        mce = []
         for bin_lower, bin_upper in zip(self.bin_lowers, self.bin_uppers):
             # Calculated |confidence - accuracy| in each bin
             in_bin = confidences.gt(bin_lower.item()) * confidences.le(bin_upper.item())
@@ -470,4 +471,63 @@ class ECELoss(torch.nn.Module):
                 accuracy_in_bin = accuracies[in_bin].float().mean()
                 avg_confidence_in_bin = confidences[in_bin].mean()
                 ece += torch.abs(avg_confidence_in_bin - accuracy_in_bin) * prop_in_bin
-        return ece
+                mce.append(torch.abs(avg_confidence_in_bin - accuracy_in_bin))
+        else:
+            mce = torch.stack(mce).max()
+        return ece, mce
+
+    
+    
+###########################
+# Record metrics & losses #
+###########################
+def record_results(args, writer, mode, step, loss, acc1, acc5, ece, mce):
+    # convert to tensors
+    loss = torch.tensor(loss)
+    acc1 = torch.tensor(acc1)
+    acc5 = torch.tensor(acc5)
+    ece = torch.tesnor(ece)
+    mce = torch.tensor(mce)
+
+    # save as results
+    self.results[f'{mode}_loss_mean'].append(loss.mean()); self.results[f'{mode}_loss_std'].append(loss.std())
+    self.results[f'{mode}_acc1_mean'].append(acc1.mean()); self.results[f'{mode}_acc1_std'].append(acc1.std())
+    self.results[f'{mode}_acc5_mean'].append(acc5.mean()); self.results[f'{mode}_acc5_std'].append(acc5.std())
+    self.results[f'{mode}_ece_mean'].append(ece.mean()); self.results[f'{mode}_ece_std'].append(ece.std())
+    self.results[f'{mode}_mce_mean'].append(per_mce.mean()); self.results[f'{mode}_mce_std'].append(per_mce.std())
+
+    # record metrics and loss
+    writer.add_scalars(
+        'Loss',
+        {f'[{args.exp_name}] {args.algorithm}_{args.dataset}_{args.model_name}_{mode}_loss_mean': loss.mean()},
+        step
+    )
+    writer.add_scalars(
+        'Accuracy',
+        {f'[{args.exp_name}] {args.algorithm}_{args.dataset}_{args.model_name}_{mode}_top1_acc_mean': acc1.mean()},
+        step
+    )
+    writer.add_scalars(
+        'Accuracy',
+        {f'[{args.exp_name}] {args.algorithm}_{args.dataset}_{args.model_name}_{mode}_top5_acc_mean': acc5.mean()},
+        step
+    )
+    writer.add_scalars(
+        'Expected Calibration Error',
+        {f'[{args.exp_name}] {args.algorithm}_{args.dataset}_{args.model_name}_{mode}_ece_mean': ece.mean()},
+        step
+    )
+    writer.add_scalars(
+        'Maximum Calibration Error',
+        {f'[{args.exp_name}] {args.algorithm}_{args.dataset}_{args.model_name}_{mode}_mce_mean': mce.mean()},
+        step
+    )
+    return loss, acc1, acc5, ece, mce
+
+
+
+######################
+# Plot delta metrics #
+######################
+def plot_delta(delta):
+    pass
