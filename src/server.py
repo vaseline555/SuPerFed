@@ -271,9 +271,6 @@ class Server(object):
         acc5_delta = per_acc5 - base_acc5
         ece_delta = per_ece - base_ece
         mce_delta = per_mce - base_mce
-
-        ## notice
-        print(f'[INFO] [Round: {str(self._round).zfill(4)}] ...finished personalization evaluation of all clients!'); gc.collect()
         return loss_delta, acc1_delta, acc5_delta, ece_delta, mce_delta
     
     def evaluate_global_model(self):
