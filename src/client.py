@@ -70,13 +70,19 @@ class Client(object):
 
     def client_update(self, current_round, epochs):
         current_lr = self.lr * self.lr_decay**current_round
-        if self.algorithm == 'fedavg':
-            self.model = fedavg_update(identifier=self.client_id, args=self.args, model=self.model, criterion=self.criterion, dataset=self.training_set, optimizer=self.optimizer, lr=current_lr, epochs=epochs)
+        if self.algorithm in ['fedavg', 'lg-fedavg', 'fedper']:
+            self.model = basic_update(identifier=self.client_id, args=self.args, model=self.model, criterion=self.criterion, dataset=self.training_set, optimizer=self.optimizer, lr=current_lr, epochs=epochs)
+        elif self.algorithm in ['fedrep']:
+            self.model = fedrep_update(identifier=self.client_id, args=self.args, model=self.model, criterion=self.criterion, dataset=self.training_set, optimizer=self.optimizer, lr=current_lr, epochs=epochs)
+        elif self.algorithm in ['fedprox', 'apfl', 'ditto', 'pfedme', 'l2gd']:
+            self.model = regularized_update(identifier=self.client_id, args=self.args, model=self.model, criterion=self.criterion, dataset=self.training_set, optimizer=self.optimizer, lr=current_lr, epochs=epochs)
+        elif self.algorithm in ['superfed-mm', 'superfed-lm']:
+            self.model = superfed_update(identifier=self.client_id, args=self.args, model=self.model, criterion=self.criterion, dataset=self.training_set, optimizer=self.optimizer, lr=current_lr, epochs=epochs)
         else:
-            pass
+            raise NotImplementedError(f'[ERROR] {self.algorithm} is NOT supported!')
  
     def client_evaluate(self):
-        if self.algorithm == 'fedavg':
+        if self.algorithm in ['fedavg', 'fedprox', 'lg-fedavg', 'fedper', 'fedrep']:
             return basic_evaluate(identifier=self.client_id, args=self.args, model=self.model, criterion=self.criterion, dataset=self.test_set)
         else:
             pass

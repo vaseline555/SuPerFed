@@ -1,3 +1,5 @@
+import gc
+import copy
 import torch
 
 from .utils import get_accuracy, CalibrationError
@@ -7,23 +9,81 @@ from .utils import get_accuracy, CalibrationError
 ###############################
 # Update models in the client #
 ###############################
-def fedavg_update(identifier, args, model, criterion, dataset, optimizer, lr, epochs):
+def basic_update(identifier, args, model, criterion, dataset, optimizer, lr, epochs):
     # prepare model
     model.train()
     model.to(args.device)
     
     # make dataloader
-    dataloader = torch.utils.data.DataLoader(dataset, batch_size=args.B, shuffle=True)
+    dataloader = torch.utils.data.DataLoader(dataset, batch_size=args.B, shuffle=True, pin_memory=True)
 
     # prepare optimizer       
     optimizer = optimizer(model.parameters(), lr=lr, momentum=0.9)
-    
+    print(len(dataloader))
     # main loop
     for e in range(args.E if epochs is None else epochs):
         # track loss and metrics
         losses, acc1, acc5, ece, mce = 0, 0, 0, 0, 0
         for inputs, targets in dataloader:
-            inputs, targets = inputs.to(args.device), targets.squeeze().to(args.device)
+            inputs, targets = inputs.to(args.device), targets.to(args.device)
+            print('하고이써!')
+            # inference
+            outputs = model(inputs)
+            loss = criterion()(outputs, targets)
+
+            # update
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step() 
+            
+            # get loss
+            losses += loss.item()
+            
+            # get accuracy
+            accs = get_accuracy(outputs, targets, (1, 5))
+            acc1 += accs[0].item(); acc5 += accs[-1].item()
+
+            # get calibration errors
+            ces = CalibrationError()(outputs, targets)
+            ece += ces[0].item(); mce += ces[-1].item()
+
+            # clear cache
+            if args.device == 'cuda': torch.cuda.empty_cache()
+        else:
+            losses /= len(dataloader)
+            acc1 /= len(dataloader)
+            acc5 /= len(dataloader)
+            ece /= len(dataloader)
+            mce /= len(dataloader)
+            print(f'\t[TRAINING - CLIENT ({str(identifier).zfill(4)})] [EPOCH: {str(e).zfill(2)}] Loss: {losses:.4f}, Top1 Acc.: {acc1:.4f}, Top5 Acc.: {acc5:.4f}, ECE: {ece:.4f}, MCE: {mce:.4f}')
+    else:
+        model.to('cpu')
+    return model
+
+def fedrep_update(args, model, criterion, dataset, optimizer, lr, epochs):                        
+    # prepare model
+    model.train()
+    model.to(args.device)
+    
+    # make dataloader
+    dataloader = torch.utils.data.DataLoader(dataset, batch_size=args.B, shuffle=True, pin_memory=True)
+
+    # prepare optimizer       
+    optimizer = optimizer(model.parameters(), lr=lr, momentum=0.9)
+    
+    # update head (penultimate layer) first
+    for name, parameter in model.named_parameters():
+        if 'classifier' in name:
+            parameter.requires_grad = True
+        else:
+            parameter.requires_grad = False
+    
+    # head fine-tuning loop
+    for e in range(args.tau):
+        # track loss and metrics
+        losses, acc1, acc5, ece, mce = 0, 0, 0, 0, 0
+        for inputs, targets in dataloader:
+            inputs, targets = inputs.to(args.device), targets.to(args.device)
 
             # inference
             outputs = model(inputs)
@@ -47,46 +107,127 @@ def fedavg_update(identifier, args, model, criterion, dataset, optimizer, lr, ep
 
             # clear cache
             if args.device == 'cuda': torch.cuda.empty_cache()
+        else:
+            losses /= len(dataloader)
+            acc1 /= len(dataloader)
+            acc5 /= len(dataloader)
+            ece /= len(dataloader)
+            mce /= len(dataloader)
+            print(f'\t[TRAINING - CLIENT ({str(identifier).zfill(4)})] [HEAD EPOCH: {str(e).zfill(2)}] Loss: {losses:.4f}, Top1 Acc.: {acc1:.4f}, Top5 Acc.: {acc5:.4f}, ECE: {ece:.4f}, MCE: {mce:.4f}')
+    
+    # then, update the body
+    for name, parameter in model.named_parameters():
+        if 'classifier' in name:
+            parameter.requires_grad = False
+        else:
+            parameter.requires_grad = True
+    
+    # body adaptation loop
+    for e in range(args.E if epochs is None else epochs):
+        # track loss and metrics
+        losses, acc1, acc5, ece, mce = 0, 0, 0, 0, 0
+        for inputs, targets in dataloader:
+            inputs, targets = inputs.to(args.device), targets.to(args.device)
+
+            # inference
+            outputs = model(inputs)
+            loss = criterion()(outputs, targets)
+
+            # update
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step() 
+            
+            # get loss
+            losses += loss.item()
+            
+            # get accuracy
+            accs = get_accuracy(outputs, targets, (1, 5))
+            acc1 += accs[0].item(); acc5 += accs[-1].item()
+
+            # get calibration errors
+            ces = CalibrationError()(outputs, targets)
+            ece += ces[0].item(); mce += ces[-1].item()
+
+            # clear cache
+            if args.device == 'cuda': torch.cuda.empty_cache()
+        else:
+            losses /= len(dataloader)
+            acc1 /= len(dataloader)
+            acc5 /= len(dataloader)
+            ece /= len(dataloader)
+            mce /= len(dataloader)
+            print(f'\t[TRAINING - CLIENT ({str(identifier).zfill(4)})] [BODY EPOCH: {str(e).zfill(2)}] Loss: {losses:.4f}, Top1 Acc.: {acc1:.4f}, Top5 Acc.: {acc5:.4f}, ECE: {ece:.4f}, MCE: {mce:.4f}')
     else:
-        losses /= len(dataloader)
-        acc1 /= len(dataloader)
-        acc5 /= len(dataloader)
-        ece /= len(dataloader)
-        mce /= len(dataloader)
-        print(f'[INFO] [TRAINING - CLIENT ({str(identifier).zfill(4)})] Loss: {losses:.4f}, Top1 Acc.: {acc1:.4f}, Top5 Acc.: {acc5:.4f}, ECE: {ece:.4f}, MCE: {mce:.4f}')
-        
         model.to('cpu')
     return model
 
-def fedprox_update(args, model, criterion, dataset, optimizer, lr, epochs, current_round):
-    pass
+def regularized_update(args, model, criterion, dataset, optimizer, lr, epochs):
+    # set local model
+    local_model = copy.deepcopy(model)
+    local_model.train(); local_model.to(args.device)
+    
+    # set global model for a regularization
+    global_model = copy.deepcopy(model)
+    for parameter in global_model.parameters(): parameter.requires_grad = False
+    global_model.eval(); global_model.to(args.device)
+    del model; gc.collect()
 
-def lg_fedavg_update(args, model, criterion, dataset, optimizer, lr, epochs, current_round):
-    pass
+    # make dataloader
+    dataloader = torch.utils.data.DataLoader(dataset, batch_size=args.B, shuffle=True, pin_memory=True)
 
-def fedper_update(args, model, criterion, dataset, optimizer, lr, epochs, current_round):
-    pass
+    # prepare optimizer       
+    optimizer = optimizer(local_model.parameters(), lr=lr, momentum=0.9)
+    
+    # main loop
+    for e in range(args.E if epochs is None else epochs):
+        # track loss and metrics
+        losses, acc1, acc5, ece, mce = 0, 0, 0, 0, 0
+        for inputs, targets in dataloader:
+            inputs, targets = inputs.to(args.device), targets.to(args.device)
 
-def fedrep_update(args, model, criterion, dataset, optimizer, lr, epochs, current_round):
-    pass
+            # inference
+            outputs = local_model(inputs)
+            loss = criterion()(outputs, targets)
+            
+            # calculate proximity regularization
+            prox = 0.
+            for p_local, p_global in zip(local_model.parameters(), global_model.parameters()): 
+                prox += (p_local - p_global).norm(2)
+            loss += args.mu * prox
+            
+            # update
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step() 
+            
+            # get loss
+            losses += loss.item()
+            
+            # get accuracy
+            accs = get_accuracy(outputs, targets, (1, 5))
+            acc1 += accs[0].item(); acc5 += accs[-1].item()
 
-def ditto_update(args, model, criterion, dataset, optimizer, lr, epochs, current_round):
-    pass
+            # get calibration errors
+            ces = CalibrationError()(outputs, targets)
+            ece += ces[0].item(); mce += ces[-1].item()
 
-def pfedme_update(args, model, criterion, dataset, optimizer, lr, epochs, current_round):
-    pass
+            # clear cache
+            if args.device == 'cuda': torch.cuda.empty_cache()
+        else:
+            losses /= len(dataloader)
+            acc1 /= len(dataloader)
+            acc5 /= len(dataloader)
+            ece /= len(dataloader)
+            mce /= len(dataloader)
+            print(f'\t[TRAINING - CLIENT ({str(identifier).zfill(4)})] [EPOCH: {str(e).zfill(2)}] Loss: {losses:.4f}, Top1 Acc.: {acc1:.4f}, Top5 Acc.: {acc5:.4f}, ECE: {ece:.4f}, MCE: {mce:.4f}')
+    else:
+        del global_model; gc.collect()
+        local_model.to('cpu')
+    return local_model
 
-def l2gd_update(args, model, criterion, dataset, optimizer, lr, epochs, current_round):
-    pass
-
-def apfl_update(args, model, criterion, dataset, optimizer, lr, epochs, current_round):
-    pass
-
-def perfedavg_update(args, model, criterion, dataset, optimizer, lr, epochs, current_round):
-    pass
-
-def superfed_update(args, model, criterion, dataset, optimizer, lr, epoch, current_round, mode='lm'):
-    dataloader = torch.utils.data.DataLoader(self.training_set, batch_size=self.batch_size, shuffle=True)
+def superfed_update(args, model, criterion, dataset, optimizer, lr, epoch, mode='lm'):
+    dataloader = torch.utils.data.DataLoader(self.training_set, batch_size=self.batch_size, shuffle=True, pin_memory=True)
         
     if self.mu > 0:
         # fix global model for calculating a proximity term
@@ -102,7 +243,7 @@ def superfed_update(args, model, criterion, dataset, optimizer, lr, epoch, curre
 
     parameters = list(self.model.named_parameters())
     parameters_to_opimizer = [v for n, v in parameters if v.requires_grad]            
-    optimizer = self.optimizer(parameters_to_opimizer, lr=self.lr * self.lr_decay**current_round, momentum=0.9)
+    optimizer 
 
     flag = False
     if epoch is None:
@@ -168,7 +309,7 @@ def basic_evaluate(identifier, args, model, criterion, dataset):
     model.to(args.device)
     
     # make dataloader
-    dataloader = torch.utils.data.DataLoader(dataset, batch_size=args.B, shuffle=False)
+    dataloader = torch.utils.data.DataLoader(dataset, batch_size=args.B, shuffle=False, pin_memory=True)
     
     # track loss and metrics
     losses, acc1, acc5, ece, mce = 0, 0, 0, 0, 0
@@ -201,9 +342,9 @@ def basic_evaluate(identifier, args, model, criterion, dataset):
         ece /= len(dataloader)
         mce /= len(dataloader)
         if identifier is not None:
-            print(f'[INFO] [EVALUATION - CLIENT ({str(identifier).zfill(4)})] Loss: {losses:.4f}, Top1 Acc.: {acc1:.4f}, Top5 Acc.: {acc5:.4f}, ECE: {ece:.4f}, MCE: {mce:.4f}')
+            print(f'\t[EVALUATION - CLIENT ({str(identifier).zfill(4)})] Loss: {losses:.4f}, Top1 Acc.: {acc1:.4f}, Top5 Acc.: {acc5:.4f}, ECE: {ece:.4f}, MCE: {mce:.4f}')
         else:
-            print(f'[INFO] [EVALUATION - SERVER] Loss: {losses:.4f}, Top1 Acc.: {acc1:.4f}, Top5 Acc.: {acc5:.4f}, ECE: {ece:.4f}, MCE: {mce:.4f}')
+            print(f'\t[EVALUATION - SERVER] Loss: {losses:.4f}, Top1 Acc.: {acc1:.4f}, Top5 Acc.: {acc5:.4f}, ECE: {ece:.4f}, MCE: {mce:.4f}')
     return losses, acc1, acc5, ece, mce
 
 @torch.no_grad()

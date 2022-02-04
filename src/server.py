@@ -16,6 +16,12 @@ from .utils import record_results, plot_delta_histogram
 
 class Server(object):
     """Central server orchestrating the whole process of a federated learning.
+    
+    Terms:
+        Global model: model reside in the server
+        Federated model: updated global model after it is boradcasted to clients
+        Local model: model reside only in the client (may or may not be the same in structure of the global model)
+        Personalized model: (model interpolation method only) combinated model from federated and local model
     """
     def __init__(self, args, writer, model, server_testset, client_datasets):
         # default attributes
@@ -190,7 +196,7 @@ class Server(object):
         """
         # 1) sample clients
         sampled_client_indices = self.sample_clients()
- 
+
         ## notice
         print(f'[INFO] [Round: {str(self._round).zfill(4)}] ...selected clients!'); gc.collect()
         

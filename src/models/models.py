@@ -61,9 +61,10 @@ class NextCharLM(nn.Module):
 
     def forward(self, x):
         encoded = self.encoder(x)
+        self.rnn.flatten_parameters()
         output, _ = self.rnn(encoded)
         output = self.classifier(output[:, -1, :])
-        return output.squeeze()
+        return output
 
     
 ############

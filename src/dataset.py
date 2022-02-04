@@ -1,167 +1,26 @@
 import os
 import gc
 import PIL
-import copy
 import string
 import torch
 import torchvision
 import numpy as np
 
 
-
-##############################################
-# Dataset prepared in `torchvision.datasets` #
-##############################################
-# base dataset class for simulating non-IID split scenario
-class SplitDatset(torch.utils.data.Dataset):
-    def __init__(self, args, indices=None, train=True, transform=None, target_transform=None, download=False):
-        self.root = args.data_path
-        self.dataset_name = args.dataset
-        self.train = train
-        self.transform = transform
-        self.target_transform = target_transform
-        self.download = download
-        self.indices = indices
-    
-    def _make_dataset(self):
-        # retrieve data
-        raw = torchvision.datasets.__dict__[self.dataset_name](root=self.root, train=self.train, transform=self.transform, target_transform=self.target_transform, download=self.download)
-        
-        # get inputs and targets
-        self.inputs, self.targets = np.array(raw.data), np.array(raw.targets)
-        if self.indices is not None:
-            self.inputs, self.targets = self.inputs[self.indices], self.targets[self.indices]
-
-    def __getitem__(self, index):
-        raise NotImplementedError('[ERROR] subclass should implement this!')
-
-    def __len__(self):
-        raise NotImplementedError('[ERROR] subclass should implement this!')
-
-# MNIST
-class MNISTDataset(SplitDatset):
-    def __init__(self, args, **kwargs):
-        super(MNISTDataset, self).__init__(args, **kwargs)    
-        self._make_dataset()
-        
-    def __getitem__(self, index):
-        # get corresponding inputs & targets pair
-        inputs, targets = self.inputs[index], self.targets[index]
-        inputs = PIL.Image.fromarray(inputs, mode='L')
-        
-        # apply transformation
-        if self.transform is not None:
-            inputs = self.transform(inputs)
-
-        if self.target_transform is not None:
-            targets = self.target_transform(targets)
-        return inputs, targets
-    
-    def __len__(self):
-        return len(self.inputs)
-
-# CIFAR10, CIFAR100
-class CIFARDataset(SplitDatset):
-    def __init__(self, args, **kwargs):
-        super(CIFARDataset, self).__init__(args, **kwargs)     
-        self._make_dataset()
-        
-    def __getitem__(self, index):
-        # get corresponding inputs & targets pair
-        inputs, targets = self.inputs[index], self.targets[index]
-        inputs = PIL.Image.fromarray(inputs, mode='RGB')
-        
-        # apply transformation
-        if self.transform is not None:
-            inputs = self.transform(inputs)
-
-        if self.target_transform is not None:
-            targets = self.target_transform(targets)
-        return inputs, targets
-    
-    def __len__(self):
-        return len(self.inputs)
-
-
     
 ########################
 # TinyImageNet dataset #
 ########################
-# TinyImageNet prototype
-class TinyImageNet(torchvision.datasets.ImageFolder):
-    base_folder = 'tiny-imagenet-200'
-    zip_md5 = '90528d7ca1a48142e341f4ef8d21d0de'
-    splits = ('train', 'val')
-    filename = 'tiny-imagenet-200.zip'
-    url = f'http://cs231n.stanford.edu/{filename}'
-    
-    def __init__(self, root, split='train', download=False, **kwargs):
-        self.root = os.path.expanduser(root)
-        self.split = torchvision.datasets.utils.verify_str_arg(split, 'split', self.splits)
-
-        if download:
-            self.download()
-
-        if not self._check_exists():
-            raise RuntimeError(f'[ERROR] dataset not found! set `download=True` to download it!')
-        super().__init__(self.split_folder, **kwargs)
-        
-    @property
-    def dataset_folder(self):
-        return os.path.join(self.root, self.base_folder)
-
-    @property
-    def split_folder(self):
-        return os.path.join(self.dataset_folder, self.split)
-
-    def _check_exists(self):
-        return os.path.exists(self.split_folder)
-    
-    def normalize_tin_val_folder_structure(self, path, images_folder='images', annotations_file='val_annotations.txt'):
-        images_folder, annotations_file = os.path.join(path, images_folder), os.path.join(path, annotations_file)
-
-        # exists
-        if not os.path.exists(images_folder) and not os.path.exists(annotations_file):
-            if not os.listdir(path):
-                raise RuntimeError('[ERROR] Validation folder is empty!')
-            return
-
-        # parse the annotations
-        with open(annotations_file) as file:
-            for line in file:
-                values = line.split()
-                img, label = values[0], values[1]
-                img_file = os.path.join(images_folder, values[0])
-                label_folder = os.path.join(path, label)
-                os.makedirs(label_folder, exist_ok=True)
-                try:
-                    shutil.move(img_file, os.path.join(label_folder, img))
-                except FileNotFoundError:
-                    continue
-        os.sync()
-        assert not os.listdir(images_folder)
-        shutil.rmtree(images_folder)
-        os.remove(annotations_file); os.sync()
-    
-    def download(self):
-        if self._check_exists(): return
-        torchvision.datasets.utils.download_and_extract_archive(self.url, self.root, filename=self.filename, remove_finished=True, md5=self.zip_md5)
-        if 'val' in self.splits:
-            self.normalize_tin_val_folder_structure(os.path.join(self.dataset_folder, 'val'))
-
 # TinyImageNet
 class TinyImageNetDataset(torch.utils.data.Dataset):
-    def __init__(self, args, indices=None, train=True, transform=None, target_transform=None, download=False):
+    def __init__(self, args, train=True, transform=None):
         super(TinyImageNetDataset, self).__init__()
         self.root = args.data_path
         self.dataset_name = args.dataset
         self.train = train
         self.transform = transform
-        self.target_transform = target_transform
-        self.indices = indices
-        raw = TinyImageNet(root=self.root, split='train' if self.train else 'val', download=download)
-        self.root = os.path.join(self.root, raw.base_folder)
-            
+        self.root = os.path.join(self.root, 'tiny-imagenet-200')
+        
         # create index dictionary
         if self.train:
             self._create_class_idx_dict_train()
@@ -236,9 +95,6 @@ class TinyImageNetDataset(torch.utils.data.Dataset):
                             targets.append(self.class_to_target_idx[target])
                         else:
                             targets.append(self.class_to_target_idx[self.val_img_to_class[file_name]])
-                            
-        if self.indices is not None:
-            inputs, targets = np.array(inputs)[self.indices], np.array(targets)[self.indices]
         return inputs, targets
     
     def return_label(self, idx):
@@ -255,9 +111,6 @@ class TinyImageNetDataset(torch.utils.data.Dataset):
         # apply transformation
         if self.transform is not None:
             inputs = self.transform(inputs)
-
-        if self.target_transform is not None:
-            targets = self.target_transform(targets)
         return inputs, targets
     
 
@@ -347,7 +200,7 @@ class ShakespeareDataset(LEAFDataset):
         return len(self.inputs)
 
     def __getitem__(self, index):
-        return np.array(self.inputs)[index], np.array(self.targets)[index]
+        return np.array(self.inputs)[index], np.array(self.targets)[index][0]
 
 
 
@@ -402,30 +255,40 @@ def multiclass_symmetric_noisify(targets, noise_rate, seed, num_classes):
         assert actual_noise > 0.0
     return np.array(noisy_targets).flatten(), actual_noise
 
-# MNIST
-class NoisyMNISTDataset(MNISTDataset):
-    def __init__(self, args, **kwargs):
-        super(MNISTDataset, self).__init__(args, **kwargs)
-        self._make_dataset()
+class LabelNoiseDataset(torch.utils.data.Dataset):
+    def __init__(self, args, dataset, transform):
+        super(LabelNoiseDataset, self).__init__()
+        self.dataset = args.dataset
+        self.transform = transform
         self.noise_rate = args.noise_rate
-        if self.train:
-            if args.noise_type == 'pair':
-                self.noisy_targets, self.actual_noise_rate = multiclass_symmetric_noisify(targets=self.targets, noise_rate=self.noise_rate, seed=args.global_seed, num_classes=args.num_classes)
-            elif args.noise_type == 'symmetric':
-                self.noisy_targets, self.actual_noise_rate = multiclass_pair_noisify(targets=self.targets, noise_rate=self.noise_rate, seed=args.global_seed, num_classes=args.num_classes)
-            self.noise_mask = np.transpose(self.noisy_targets) != np.transpose(self.targets)
-            self.targets, self.original_targets = self.noisy_targets, self.targets
+        self.inputs, self.targets = np.array(dataset.data), np.array(dataset.targets)
+        del dataset; gc.collect()
+        
+        # inject label noise
+        if args.noise_type == 'pair':
+            noisy_targets, actual_noise_rate = multiclass_symmetric_noisify(targets=self.targets, noise_rate=args.noise_rate, seed=args.global_seed, num_classes=args.num_classes)
+        elif args.noise_type == 'symmetric':
+            noisy_targets, actual_noise_rate = multiclass_pair_noisify(targets=self.targets, noise_rate=args.noise_rate, seed=args.global_seed, num_classes=args.num_classes)
+        self.noise_mask = np.transpose(noisy_targets) != np.transpose(self.targets)
+        self.targets, self.original_targets = noisy_targets, self.targets
+    
+    def __len__(self):
+        return len(self.inputs)
 
-# CIFAR10
-class NoisyCIFARDataset(CIFARDataset):
-    def __init__(self, args, **kwargs):
-        super(CIFARDataset, self).__init__(args, **kwargs)
-        self._make_dataset()
-        self.noise_rate = args.noise_rate
-        if self.train:
-            if args.noise_type == 'pair':
-                self.noisy_targets, self.actual_noise_rate = multiclass_symmetric_noisify(targets=self.targets, noise_rate=self.noise_rate, seed=args.global_seed, num_classes=args.num_classes)
-            elif args.noise_type == 'symmetric':
-                self.noisy_targets, self.actual_noise_rate = multiclass_pair_noisify(targets=self.targets, noise_rate=self.noise_rate, seed=args.global_seed, num_classes=args.num_classes)
-            self.noise_mask = np.transpose(self.noisy_targets) != np.transpose(self.targets)
-            self.targets, self.original_targets = self.noisy_targets, self.targets
+    def __getitem__(self, index):
+        inputs, targets = self.inputs[index], self.targets[index]
+        if self.dataset == 'MNIST':
+            inputs = PIL.Image.fromarray(inputs, mode='L')
+        else:
+            inputs = PIL.Image.fromarray(inputs, mode='RGB')
+        if self.transform is not None:
+            inputs = self.transform(inputs)
+        return inputs, targets
+    
+    def get_noise_mask(self):
+        return self.noise_mask
+    
+    def get_original_targets(self):
+        return self.original_targets
+    
+    

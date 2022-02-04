@@ -121,8 +121,9 @@ if __name__ == "__main__":
     # optimization related arguments
     parser.add_argument('--lr', help='learning rate of each client', type=float, default=0.01)
     parser.add_argument('--lr_decay', help='magnitude of learning rate decay at every round', type=float, default=0.99)
-    parser.add_argument('--mu',help='constant for proximity regularization term', type=float, default=1.0)
-    parser.add_argument('--nu', help='constant for low-loss subspace construction term', type=float, default=1.0)
+    parser.add_argument('--mu',help='constant for proximity regularization term (for fedprox, superfed)', type=float, default=1.0)
+    parser.add_argument('--nu', help='constant for low-loss subspace construction term (for superfed)', type=float, default=1.0)
+    parser.add_argument('--tau', help='constant for fine tuning head for better local reprsentation learning (for fedrep)', type=int, default=5)
     
     # model related arguments
     parser.add_argument('--model_name', help='model to use [TwoNN|TwoCNN|NextCharLM|ResNet18|MobileNetv2]', type=str, choices=['TwoNN', 'TwoCNN', 'NextCharLM', 'ResNet18', 'MobileNetv2'])

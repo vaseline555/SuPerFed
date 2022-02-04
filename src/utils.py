@@ -1,6 +1,5 @@
 import os
 import gc
-import copy
 import json
 import torch
 import torchvision
@@ -10,7 +9,7 @@ import matplotlib.pyplot as plt
 from tqdm import tqdm
 from joblib import Parallel, delayed
 
-from .dataset import MNISTDataset, CIFARDataset, NoisyMNISTDataset, NoisyCIFARDataset, TinyImageNet, TinyImageNetDataset, FEMNISTDataset, ShakespeareDataset
+from .dataset import TinyImageNetDataset, FEMNISTDataset, ShakespeareDataset, LabelNoiseDataset
 
 
 
@@ -55,6 +54,7 @@ def split_data(args, raw_train):
         # construct a hashmap
         split_map = {i: split_indices[i] for i in range(args.K)}
         return split_map
+    
     # Non-IID split proposed in McMahan et al., 2016 (i.e., each client has samples from at least two different classes)
     elif args.split_type == 'pathological':
         assert args.dataset in ['MNIST', 'CIFAR10'], '[ERROR] `pathological non-IID setting` is supported only for `MNIST` or `CIFAR10` dataset!'
@@ -74,9 +74,12 @@ def split_data(args, raw_train):
         # construct a hashmap
         split_map = {i: split_indices[i] for i in range(args.K)}
         return split_map
+    
     # Non-IID split proposed in Hsu et al., 2019 (i.e., using Dirichlet distribution to simulate non-IID split)
     # https://github.com/QinbinLi/FedKT/blob/0bb9a89ea266c057990a4a326b586ed3d2fb2df8/experiments.py
-    elif args.split_type == 'dirichlet':
+    elif args.split_type == 'dirichlet':        
+        split_map = dict()
+
         # container
         client_indices_list = [[] for _ in range(args.K)]
 
@@ -86,7 +89,7 @@ def split_data(args, raw_train):
             target_class_indices = np.where(np.array(raw_train.targets) == c)[0]
 
             # shuffle class indices
-            np.random.seed(args.global_seed); np.random.shuffle(target_class_indices)
+            np.random.shuffle(target_class_indices)
 
             # get label retrieval probability per each client based on a Dirichlet distribution
             proportions = np.random.dirichlet(np.repeat(args.alpha, args.K))
@@ -100,14 +103,13 @@ def split_data(args, raw_train):
             idx_split = np.array_split(target_class_indices, proportions)
             client_indices_list = [j + idx.tolist() for j, idx in zip(client_indices_list, idx_split)]
 
-        # shuffle finally
+        # shuffle finally and create a hashmap
         for j in range(args.K):
             np.random.seed(args.global_seed); np.random.shuffle(client_indices_list[j])
-        
-        # construct a hashmap
-        split_map = dict(zip([i for i in range(args.K)], client_indices_list))
-        split_map = {k: v for k, v in split_map.items() if len(v) > 0}
+            if len(client_indices_list[j]) > 2:
+                split_map[j] = client_indices_list[j]
         return split_map
+    
     # LEAF benchmark dataset
     elif args.split_type == 'realistic':
         return print('[INFO] No need to split... use LEAF parser directly!')
@@ -166,7 +168,7 @@ class LEAFParser:
         """
         def construct_leaf(idx, user):
             # copy dataset class prototype for each training set and test set
-            tr_dset, te_dset = copy.deepcopy(self.dataset_class)(), copy.deepcopy(self.dataset_class)()
+            tr_dset, te_dset = self.dataset_class(), self.dataset_class()
             setattr(tr_dset, 'train', True); setattr(te_dset, 'train', False)
             
             # set essential attributes
@@ -196,77 +198,83 @@ def get_dataset(args):
         global_testset: (optional) test set located at the central server, 
         client datasets: [tuple(local_training_set[indices_1], local_test_set[indices_1]), tuple(local_training_set[indices_2], local_test_set[indices_2]), ...]
     """
-    client_datasets = []
+    def construct_dataset(indices):
+            subset = torch.utils.data.Subset(raw_train, indices)
+            test_size = int(len(subset) * args.test_fraction)
+            return (torch.utils.data.random_split(subset, [len(subset) - test_size, test_size]))
+    
     if args.dataset in ['MNIST', 'CIFAR10', 'CIFAR100']:
         # call raw datasets
-        raw_train = torchvision.datasets.__dict__[args.dataset](root=args.data_path, train=True, transform=torchvision.transforms.Compose([torchvision.transforms.Resize(28), torchvision.transforms.ToTensor()]), download=True)
-        raw_test = torchvision.datasets.__dict__[args.dataset](root=args.data_path, train=False, transform=torchvision.transforms.Compose([torchvision.transforms.Resize(28), torchvision.transforms.ToTensor()]), download=True)
+        raw_train = torchvision.datasets.__dict__[args.dataset](
+            root=args.data_path, 
+            train=True, 
+            transform=torchvision.transforms.Compose(
+                [
+                    torchvision.transforms.Resize(28), 
+                    torchvision.transforms.ToTensor()
+                ]
+            ) if 'CIFAR' in args.dataset else torchvision.transforms.ToTensor(), 
+            download=True
+        )
+        raw_test = torchvision.datasets.__dict__[args.dataset](
+            root=args.data_path, 
+            train=False, 
+            transform=torchvision.transforms.Compose(
+                [
+                    torchvision.transforms.Resize(28), 
+                    torchvision.transforms.ToTensor()
+                ]
+            ) if 'CIFAR' in args.dataset else torchvision.transforms.ToTensor(), 
+            download=True
+        )
+        if args.label_noise:
+            raw_train = LabelNoiseDataset(
+                args,
+                dataset=raw_train,
+                transform=torchvision.transforms.Compose(
+                    [
+                        torchvision.transforms.Resize(28), 
+                        torchvision.transforms.ToTensor()
+                    ]
+                ) if 'CIFAR' in args.dataset else torchvision.transforms.ToTensor()
+            )
         
         # get split indices
         split_map = split_data(args, raw_train)
 
-        if args.dataset == 'MNIST':
-            # construct client datasets
-            def construct_mnist(indices):
-                if len(indices) == 0: return None
-                if args.label_noise:
-                    return (
-                        NoisyMNISTDataset(args, indices=indices[:int(len(indices) * (1. - args.test_fraction))], train=True, transform=torchvision.transforms.ToTensor()),
-                        MNISTDataset(args, indices=indices[int(len(indices) * (1. - args.test_fraction)):], train=True, transform=torchvision.transforms.ToTensor())
-                    )
-                else:
-                    return (
-                        MNISTDataset(args, indices=indices[:int(len(indices) * (1. - args.test_fraction))], train=True, transform=torchvision.transforms.ToTensor()),
-                        MNISTDataset(args, indices=indices[int(len(indices) * (1. - args.test_fraction)):], train=True, transform=torchvision.transforms.ToTensor())
-                    )
-            client_datasets = Parallel(n_jobs=os.cpu_count() // 4, prefer='threads')(delayed(construct_mnist)(indices) for _, indices in tqdm(split_map.items(), desc=f'[INFO] ...create datasets [{args.dataset}]!'))
-            
-            # construct server datasets
-            server_testset = MNISTDataset(args, train=False, transform=torchvision.transforms.ToTensor())
-            split_map = {k: len(v) for k, v in split_map.items()}
-            return split_map, server_testset, client_datasets
-        
-        elif args.dataset in ['CIFAR10', 'CIFAR100']:
-            # construct client datasets
-            def construct_cifar(indices):
-                if len(indices) == 0: return None
-                if args.label_noise:
-                    return (
-                        NoisyCIFARDataset(args, indices=indices[:int(len(indices) * (1. - args.test_fraction))], train=True, transform=torchvision.transforms.Compose([torchvision.transforms.Resize(28), torchvision.transforms.ToTensor()])),
-                        CIFARDataset(args, indices=indices[int(len(indices) * (1. - args.test_fraction)):], train=True, transform=torchvision.transforms.Compose([torchvision.transforms.Resize(28), torchvision.transforms.ToTensor()]))
-                    )
-                else:
-                    return (
-                        CIFARDataset(args, indices=indices[:int(len(indices) * (1. - args.test_fraction))], train=True, transform=torchvision.transforms.Compose([torchvision.transforms.Resize(28), torchvision.transforms.ToTensor()])),
-                        CIFARDataset(args, indices=indices[int(len(indices) * (1. - args.test_fraction)):], train=True, transform=torchvision.transforms.Compose([torchvision.transforms.Resize(28), torchvision.transforms.ToTensor()]))
-                    )
-            client_datasets = Parallel(n_jobs=os.cpu_count() // 4, prefer='threads')(delayed(construct_cifar)(indices) for _, indices in tqdm(split_map.items(), desc=f'[INFO] ...create datasets [{args.dataset}]!'))
-            
-            # construct server datasets
-            server_testset = CIFARDataset(args, train=False, transform=torchvision.transforms.Compose([torchvision.transforms.Resize(28), torchvision.transforms.ToTensor()]))
-            split_map = {k: len(v) for k, v in split_map.items()}
-            return split_map, server_testset, client_datasets
-        
+        # construct client datasets
+        client_datasets = Parallel(n_jobs=os.cpu_count() // 4, prefer='threads')(delayed(construct_dataset)(indices) for _, indices in tqdm(split_map.items(), desc=f'[INFO] ...create datasets [{args.dataset}]!'))
+        return split_map, raw_test, client_datasets
+    
     elif args.dataset == 'TinyImageNet':
         # call raw dataset
-        raw_train = TinyImageNet(root=args.data_path, split='train', download=True)
-        raw_test = TinyImageNet(root=args.data_path, split='val', download=True)
+        raw_train = TinyImageNetDataset(
+            args, 
+            train=True, 
+            transform=torchvision.transforms.Compose(
+                [
+                    torchvision.transforms.Resize(64), 
+                    torchvision.transforms.ToTensor()
+                ]
+            )
+        )
+        raw_test = TinyImageNetDataset(
+            args, 
+            train=False, 
+            transform=torchvision.transforms.Compose(
+                [
+                    torchvision.transforms.Resize(64), 
+                    torchvision.transforms.ToTensor()
+                ]
+            )
+        )
         
         # get split indices
         split_map = split_data(args, raw_train)
         
         # construct client datasets
-        def construct_tinyimagenet(indices):
-            if len(indices) == 0: return None
-            return (
-                TinyImageNetDataset(args, indices=indices[:int(len(indices) * (1. - args.test_fraction))], train=True, transform=torchvision.transforms.Compose([torchvision.transforms.Resize(64), torchvision.transforms.ToTensor()])),
-                TinyImageNetDataset(args, indices=indices[int(len(indices) * (1. - args.test_fraction)):], train=True, transform=torchvision.transforms.Compose([torchvision.transforms.Resize(64), torchvision.transforms.ToTensor()]))
-            )
-        client_datasets = Parallel(n_jobs=os.cpu_count() // 4, prefer='threads')(delayed(construct_tinyimagenet)(indices) for _, indices in tqdm(split_map.items(), desc=f'[INFO] ...create datasets [{args.dataset}]!'))
-        
-        # construct server datasets
-        server_testset = TinyImageNetDataset(args, train=False, transform=torchvision.transforms.Compose([torchvision.transforms.Resize(64), torchvision.transforms.ToTensor()]))
-        return split_map, server_testset, client_datasets
+        client_datasets = Parallel(n_jobs=os.cpu_count() // 4, prefer='threads')(delayed(construct_dataset)(indices) for _, indices in tqdm(split_map.items(), desc=f'[INFO] ...create datasets [{args.dataset}]!'))
+        return split_map, raw_test, client_datasets
     
     elif args.dataset in ['FEMNIST', 'Shakespeare']:
         assert args.split_type == 'realistic', '[ERROR] LEAF benchmark dataset is only supported for `realistic` split scenario!'
