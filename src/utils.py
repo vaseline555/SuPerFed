@@ -208,6 +208,7 @@ def get_dataset(args):
         if args.dataset == 'MNIST':
             # construct client datasets
             def construct_mnist(indices):
+                if len(indices) == 0: return None
                 if args.label_noise:
                     return (
                         NoisyMNISTDataset(args, indices=indices[:int(len(indices) * (1. - args.test_fraction))], train=True, transform=torchvision.transforms.ToTensor()),
@@ -219,7 +220,7 @@ def get_dataset(args):
                         MNISTDataset(args, indices=indices[int(len(indices) * (1. - args.test_fraction)):], train=True, transform=torchvision.transforms.ToTensor())
                     )
             client_datasets = Parallel(n_jobs=os.cpu_count() // 4, prefer='threads')(delayed(construct_mnist)(indices) for _, indices in tqdm(split_map.items(), desc=f'[INFO] ...create datasets [{args.dataset}]!'))
-                
+            
             # construct server datasets
             server_testset = MNISTDataset(args, train=False, transform=torchvision.transforms.ToTensor())
             split_map = {k: len(v) for k, v in split_map.items()}
@@ -228,6 +229,7 @@ def get_dataset(args):
         elif args.dataset in ['CIFAR10', 'CIFAR100']:
             # construct client datasets
             def construct_cifar(indices):
+                if len(indices) == 0: return None
                 if args.label_noise:
                     return (
                         NoisyCIFARDataset(args, indices=indices[:int(len(indices) * (1. - args.test_fraction))], train=True, transform=torchvision.transforms.Compose([torchvision.transforms.Resize(28), torchvision.transforms.ToTensor()])),
@@ -239,7 +241,7 @@ def get_dataset(args):
                         CIFARDataset(args, indices=indices[int(len(indices) * (1. - args.test_fraction)):], train=True, transform=torchvision.transforms.Compose([torchvision.transforms.Resize(28), torchvision.transforms.ToTensor()]))
                     )
             client_datasets = Parallel(n_jobs=os.cpu_count() // 4, prefer='threads')(delayed(construct_cifar)(indices) for _, indices in tqdm(split_map.items(), desc=f'[INFO] ...create datasets [{args.dataset}]!'))
-
+            
             # construct server datasets
             server_testset = CIFARDataset(args, train=False, transform=torchvision.transforms.Compose([torchvision.transforms.Resize(28), torchvision.transforms.ToTensor()]))
             split_map = {k: len(v) for k, v in split_map.items()}
@@ -255,12 +257,13 @@ def get_dataset(args):
         
         # construct client datasets
         def construct_tinyimagenet(indices):
+            if len(indices) == 0: return None
             return (
                 TinyImageNetDataset(args, indices=indices[:int(len(indices) * (1. - args.test_fraction))], train=True, transform=torchvision.transforms.Compose([torchvision.transforms.Resize(64), torchvision.transforms.ToTensor()])),
                 TinyImageNetDataset(args, indices=indices[int(len(indices) * (1. - args.test_fraction)):], train=True, transform=torchvision.transforms.Compose([torchvision.transforms.Resize(64), torchvision.transforms.ToTensor()]))
             )
         client_datasets = Parallel(n_jobs=os.cpu_count() // 4, prefer='threads')(delayed(construct_tinyimagenet)(indices) for _, indices in tqdm(split_map.items(), desc=f'[INFO] ...create datasets [{args.dataset}]!'))
-
+        
         # construct server datasets
         server_testset = TinyImageNetDataset(args, train=False, transform=torchvision.transforms.Compose([torchvision.transforms.Resize(64), torchvision.transforms.ToTensor()]))
         return split_map, server_testset, client_datasets
@@ -485,11 +488,11 @@ class CalibrationError(torch.nn.Module):
 ###########################
 def record_results(args, writer, results, mode, step, loss, acc1, acc5, ece, mce):
     # save as results
-    results[f'{mode}_loss_mean'].append(loss.mean()); results[f'{mode}_loss_std'].append(loss.std())
-    results[f'{mode}_acc1_mean'].append(acc1.mean()); results[f'{mode}_acc1_std'].append(acc1.std())
-    results[f'{mode}_acc5_mean'].append(acc5.mean()); results[f'{mode}_acc5_std'].append(acc5.std())
-    results[f'{mode}_ece_mean'].append(ece.mean()); results[f'{mode}_ece_std'].append(ece.std())
-    results[f'{mode}_mce_mean'].append(mce.mean()); results[f'{mode}_mce_std'].append(mce.std())
+    results[f'{mode}_loss_mean'].append(loss.mean().item()); results[f'{mode}_loss_std'].append(loss.std(unbiased=False).item())
+    results[f'{mode}_acc1_mean'].append(acc1.mean().item()); results[f'{mode}_acc1_std'].append(acc1.std(unbiased=False).item())
+    results[f'{mode}_acc5_mean'].append(acc5.mean().item()); results[f'{mode}_acc5_std'].append(acc5.std(unbiased=False).item())
+    results[f'{mode}_ece_mean'].append(ece.mean().item()); results[f'{mode}_ece_std'].append(ece.std(unbiased=False).item())
+    results[f'{mode}_mce_mean'].append(mce.mean().item()); results[f'{mode}_mce_std'].append(mce.std(unbiased=False).item())
 
     # record metrics and loss
     writer.add_scalars(

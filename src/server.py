@@ -308,11 +308,11 @@ class Server(object):
                 loss_delta, acc1_delta, acc5_delta, ece_delta, mce_delta = self.evaluate_personalized_model()
                 
                 # track  deltas
-                self.results['loss_delta_mean'].append(loss_delta.mean()); self.results['loss_delta_std'].append(loss_delta.std())
-                self.results['acc1_delta_mean'].append(acc1_delta.mean()); self.results['acc1_delta_std'].append(acc1_delta.std())
-                self.results['acc5_delta_mean'].append(acc5_delta.mean()); self.results['acc5_delta_std'].append(acc5_delta.std())
-                self.results['ece_delta_mean'].append(ece_delta.mean()); self.results['ece_delta_std'].append(ece_delta.std())
-                self.results['mce_delta_mean'].append(mce_delta.mean()); self.results['mce_delta_std'].append(mce_delta.std())
+                self.results['loss_delta_mean'].append(loss_delta.mean().item()); self.results['loss_delta_std'].append(loss_delta.std(unbiased=False).item())
+                self.results['acc1_delta_mean'].append(acc1_delta.mean().item()); self.results['acc1_delta_std'].append(acc1_delta.std(unbiased=False).item())
+                self.results['acc5_delta_mean'].append(acc5_delta.mean().item()); self.results['acc5_delta_std'].append(acc5_delta.std(unbiased=False).item())
+                self.results['ece_delta_mean'].append(ece_delta.mean().item()); self.results['ece_delta_std'].append(ece_delta.std(unbiased=False).item())
+                self.results['mce_delta_mean'].append(mce_delta.mean().item()); self.results['mce_delta_std'].append(mce_delta.std(unbiased=False).item())
                 
                 # plot histogram
                 plot_delta_histogram(self.args, self.writer, 'Loss', self._round // self.args.eval_every, loss_delta)

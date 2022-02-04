@@ -41,7 +41,6 @@ def main(args, writer):
     
     
     
-    
     #################
     # Prepare model #
     #################
@@ -75,6 +74,7 @@ def main(args, writer):
         arguments = {'arguments': {str(arg): getattr(args, arg) for arg in vars(args)}}
         sample_stats = {'sample_statistics': split_map}
         results = {'results': {key: value for key, value in central_server.results.items() if len(value) > 0}}
+        print(results)
         json.dump({**arguments, **sample_stats, **results}, result_file)
 
 if __name__ == "__main__":

@@ -152,6 +152,7 @@ class TinyImageNet(torchvision.datasets.ImageFolder):
 # TinyImageNet
 class TinyImageNetDataset(torch.utils.data.Dataset):
     def __init__(self, args, indices=None, train=True, transform=None, target_transform=None, download=False):
+        super(TinyImageNetDataset, self).__init__()
         self.root = args.data_path
         self.dataset_name = args.dataset
         self.train = train
@@ -195,7 +196,6 @@ class TinyImageNetDataset(torch.utils.data.Dataset):
                 if f.endswith('.JPEG'):
                     num_images = num_images + 1
 
-        self.len = num_images
         self.target_idx_to_class = {i: classes[i] for i in range(len(classes))}
         self.class_to_target_idx = {classes[i]: i for i in range(len(classes))}
 
@@ -213,7 +213,6 @@ class TinyImageNetDataset(torch.utils.data.Dataset):
                 set_of_classes.add(words[1])
         
         classes = sorted(list(set_of_classes))
-        self.len = len(list(self.val_img_to_class.keys()))
         self.class_to_target_idx = {classes[i]: i for i in range(len(sorted(list(set_of_classes))))}
         self.target_idx_to_class = {i: classes[i] for i in range(len(sorted(list(set_of_classes))))}
 
@@ -224,7 +223,7 @@ class TinyImageNetDataset(torch.utils.data.Dataset):
             list_of_dirs = [target for target in self.class_to_target_idx.keys()]
         else:
             img_root_dir = os.path.join(self.root, 'val')
-            list_of_dirs = ['images']
+            list_of_dirs = [target for target in self.class_to_target_idx.keys()]
 
         for target in list_of_dirs:
             dirs = os.path.join(img_root_dir, target)
@@ -250,8 +249,8 @@ class TinyImageNetDataset(torch.utils.data.Dataset):
     
     def __getitem__(self, index):
         # get corresponding inputs & targets pair
-        targets = self.targets[index]
-        inputs = PIL.Image.open(self.inputs).convert('RGB')[index]
+        inputs, targets = self.inputs[index], self.targets[index]
+        inputs = PIL.Image.open(inputs).convert('RGB')
         
         # apply transformation
         if self.transform is not None:
@@ -348,7 +347,7 @@ class ShakespeareDataset(LEAFDataset):
         return len(self.inputs)
 
     def __getitem__(self, index):
-        return np.array(self.inputs[index]), np.array(self.targets[index])
+        return np.array(self.inputs)[index], np.array(self.targets)[index]
 
 
 

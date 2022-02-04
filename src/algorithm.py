@@ -14,7 +14,7 @@ def fedavg_update(identifier, args, model, criterion, dataset, optimizer, lr, ep
     
     # make dataloader
     dataloader = torch.utils.data.DataLoader(dataset, batch_size=args.B, shuffle=True)
-    
+
     # prepare optimizer       
     optimizer = optimizer(model.parameters(), lr=lr, momentum=0.9)
     
@@ -23,8 +23,8 @@ def fedavg_update(identifier, args, model, criterion, dataset, optimizer, lr, ep
         # track loss and metrics
         losses, acc1, acc5, ece, mce = 0, 0, 0, 0, 0
         for inputs, targets in dataloader:
-            inputs, targets = inputs.to(args.device), targets.to(args.device)
- 
+            inputs, targets = inputs.to(args.device), targets.squeeze().to(args.device)
+
             # inference
             outputs = model(inputs)
             loss = criterion()(outputs, targets)
