@@ -587,17 +587,17 @@ def plot_by_lambda(args, step, results):
     color_map = {'Loss': 'b', 'Top 1 Accuracy': 'g', 'Top 5 Accuracy': 'r', 'Expected Calibration Error': 'c', 'Maximum Calibration Error': 'm'}
     
     # calculate statistics
-    mean = torch.stack(results).mean(0)
-    std = torch.stack(results).std(0, unbiased=True)
+    mean = results.mean(0)
+    std = results.std(0, unbiased=True)
     
     # make figure
     fig, ax = plt.subplots(nrows=1, ncols=5, figsize=(15, 3))
     plt.xticks(np.arange(0.0, 1.1, 0.1))
-    ax[0].errorbar(torch.arange(0.0, 1.1, 0.1), mean[0], yerr=stds[0], color='c'); ax[0].set_title('Loss'); ax[0].set_xlabel(r'$\alpha$')
-    ax[1].errorbar(torch.arange(0.0, 1.1, 0.1), mean[1], yerr=stds[1], color='m'); ax[1].set_title('Top 1 Accuracy'); ax[0].set_xlabel(r'$\alpha$')
-    ax[2].errorbar(torch.arange(0.0, 1.1, 0.1), mean[2], yerr=stds[2], color='y'); ax[2].set_title('Top 5 Accuracy'); ax[0].set_xlabel(r'$\alpha$')
-    ax[3].errorbar(torch.arange(0.0, 1.1, 0.1), mean[3], yerr=stds[3], color='b'); ax[3].set_title('Exepcted Calibration Error'); ax[0].set_xlabel(r'$\alpha$')
-    ax[4].errorbar(torch.arange(0.0, 1.1, 0.1), mean[4], yerr=stds[4], color='k'); ax[4].set_title('Maximum Calibration Error'); ax[0].set_xlabel(r'$\alpha$')
+    ax[0].errorbar(torch.arange(0.0, 1.1, 0.1), mean[0], yerr=std[0], color='c'); ax[0].set_title('Loss'); ax[0].set_xlabel(r'$\alpha$')
+    ax[1].errorbar(torch.arange(0.0, 1.1, 0.1), mean[1], yerr=std[1], color='m'); ax[1].set_title('Top 1 Accuracy'); ax[0].set_xlabel(r'$\alpha$')
+    ax[2].errorbar(torch.arange(0.0, 1.1, 0.1), mean[2], yerr=std[2], color='y'); ax[2].set_title('Top 5 Accuracy'); ax[0].set_xlabel(r'$\alpha$')
+    ax[3].errorbar(torch.arange(0.0, 1.1, 0.1), mean[3], yerr=std[3], color='b'); ax[3].set_title('Exepcted Calibration Error'); ax[0].set_xlabel(r'$\alpha$')
+    ax[4].errorbar(torch.arange(0.0, 1.1, 0.1), mean[4], yerr=std[4], color='k'); ax[4].set_title('Maximum Calibration Error'); ax[0].set_xlabel(r'$\alpha$')
     plt.tight_layout()
 
     # save

@@ -239,20 +239,20 @@ class Server(object):
     def evaluate_personalized_model(self):
         """Evaluate the personalization performance of given algorithm using all of the client-side holdout dataset.
             
-            * Set `n_jobs=4` to prevent OOM error
+            * Set `n_jobs=os.cpu_count() // 8` to prevent OOM error
         """
         # 1) broadcast current global model to all clients
-        _ = Parallel(n_jobs=self.args.n_jobs, prefer='threads')(delayed(self.transmit_model)(idx) for idx in tqdm(range(self.num_clients), desc=f'[INFO] [Round: {str(self._round).zfill(4)}] ...transmit global models to ALL clients!'))
+        _ = Parallel(n_jobs=os.cpu_count() // 8, prefer='threads')(delayed(self.transmit_model)(idx) for idx in tqdm(range(self.num_clients), desc=f'[INFO] [Round: {str(self._round).zfill(4)}] ...transmit global models to ALL clients!'))
         
         
         
         # 2) evaluate baseline performance of all clients
-        results = Parallel(n_jobs=4, prefer='threads')(delayed(self.evaluate_clients)(idx) for idx in tqdm(range(self.num_clients), desc=f'[INFO] [Round: {str(self._round).zfill(4)}] ...evaluate a baseline performance of ALL clients!'))
+        results = Parallel(n_jobs=os.cpu_count() // 8, prefer='threads')(delayed(self.evaluate_clients)(idx) for idx in tqdm(range(self.num_clients), desc=f'[INFO] [Round: {str(self._round).zfill(4)}] ...evaluate a baseline performance of ALL clients!'))
         
         ## record results
         if self.algorithm in ['superfed-mm', 'superfed-lm']:
             results_all = torch.stack([torch.stack(tensor) for tensor in results]) # args.K x 5 x 21
-            self.results, per_loss, per_acc1, per_acc5, per_ece, per_mce = record_results(self.args, self.writer, self.results, 'selected', self._round, *results_all.mean(0).mean(1))
+            self.results, base_loss, base_acc1, base_acc5, base_ece, base_mce = record_results(self.args, self.writer, self.results, 'baseline_all', self._round, *results_all.mean(0).mean(1))
         else:
             self.results, base_loss, base_acc1, base_acc5, base_ece, base_mce = record_results(self.args, self.writer, self.results, 'baseline_all', self._round // self.args.eval_every, *torch.tensor(results).T)
 
@@ -262,17 +262,17 @@ class Server(object):
         
         
         # 3) update all client models in a small step (i.e., one epoch)
-        _ = Parallel(n_jobs=4, prefer='threads')(delayed(self.update_clients)(idx, 1) for idx in tqdm(range(self.num_clients), desc=f'[INFO] [Round: {str(self._round).zfill(4)}] ...update models of ALL clients by one step!'))
+        _ = Parallel(n_jobs=os.cpu_count() // 8, prefer='threads')(delayed(self.update_clients)(idx, 1) for idx in tqdm(range(self.num_clients), desc=f'[INFO] [Round: {str(self._round).zfill(4)}] ...update models of ALL clients by one step!'))
         
         
         
         # 4) evaluate personalization performance of all clients
-        results = Parallel(n_jobs=4, prefer='threads')(delayed(self.evaluate_clients)(idx) for idx in tqdm(range(self.num_clients), desc=f'[INFO] [Round: {str(self._round).zfill(4)}] ...evaluate a personalization performance of ALL clients!'))
+        results = Parallel(n_jobs=os.cpu_count() // 8, prefer='threads')(delayed(self.evaluate_clients)(idx) for idx in tqdm(range(self.num_clients), desc=f'[INFO] [Round: {str(self._round).zfill(4)}] ...evaluate a personalization performance of ALL clients!'))
         
         ## record results
         if self.algorithm in ['superfed-mm', 'superfed-lm']:
             results_all = torch.stack([torch.stack(tensor) for tensor in results]) # args.K x 5 x 21
-            self.results, per_loss, per_acc1, per_acc5, per_ece, per_mce = record_results(self.args, self.writer, self.results, 'selected', self._round, *results_all.mean(0).mean(1))
+            self.results, per_loss, per_acc1, per_acc5, per_ece, per_mce = record_results(self.args, self.writer, self.results, 'personalized_all', self._round, *results_all.mean(0).mean(1))
             
             # plot change dynamics of loss & metrics
             plot_by_lambda(self.args, self._round // self.args.eval_every, results_all)
