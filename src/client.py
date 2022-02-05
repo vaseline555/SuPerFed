@@ -74,21 +74,22 @@ class Client(object):
             self.model = basic_update(identifier=self.client_id, args=self.args, model=self.model, criterion=self.criterion, dataset=self.training_set, optimizer=self.optimizer, lr=current_lr, epochs=epochs)
         elif self.algorithm in ['fedrep']:
             self.model = fedrep_update(identifier=self.client_id, args=self.args, model=self.model, criterion=self.criterion, dataset=self.training_set, optimizer=self.optimizer, lr=current_lr, epochs=epochs)
-        elif self.algorithm in ['fedprox', 'pfedme', 'l2gd']:
-            self.model = regularized_update(identifier=self.client_id, args=self.args, model=self.model, criterion=self.criterion, dataset=self.training_set, optimizer=self.optimizer, lr=current_lr, epochs=epochs)
+        elif self.algorithm in ['fedprox']:
+            self.model = fedprox_update(identifier=self.client_id, args=self.args, model=self.model, criterion=self.criterion, dataset=self.training_set, optimizer=self.optimizer, lr=current_lr, epochs=epochs)
         elif self.algorithm in ['apfl']:
             self.model = apfl_update(identifier=self.client_id, args=self.args, model=self.model, criterion=self.criterion, dataset=self.training_set, optimizer=self.optimizer, lr=current_lr, epochs=epochs)
         elif self.algorithm in ['ditto']:
             self.model = ditto_update(identifier=self.client_id, args=self.args, model=self.model, criterion=self.criterion, dataset=self.training_set, optimizer=self.optimizer, lr=current_lr, epochs=epochs)
+        elif self.algorithm in ['pfedme']:
+            self.model = pfedme_update(identifier=self.client_id, args=self.args, model=self.model, criterion=self.criterion, dataset=self.training_set, optimizer=self.optimizer, lr=current_lr, epochs=epochs)
         elif self.algorithm in ['superfed-mm', 'superfed-lm']:
-            self.model = superfed_update(identifier=self.client_id, args=self.args, model=self.model, criterion=self.criterion, dataset=self.training_set, optimizer=self.optimizer, lr=current_lr, epochs=epochs)
+            self.model = superfed_update(identifier=self.client_id, args=self.args, model=self.model, criterion=self.criterion, dataset=self.training_set, optimizer=self.optimizer, lr=current_lr, epochs=epochs, start_mix=True if current_round > int(self.args.L * self.args.R) else False)
         else:
             raise NotImplementedError(f'[ERROR] {self.algorithm} is NOT supported!')
+        self.model.to('cpu')
  
-    def client_evaluate(self):
-        if self.algorithm in ['fedavg', 'fedprox', 'lg-fedavg', 'fedper', 'fedrep']:
+    def client_evaluate(self, current_round):
+        if self.algorithm in ['fedavg', 'fedprox', 'lg-fedavg', 'fedper', 'fedrep', 'apfl', 'ditto', 'pfedme']:
             return basic_evaluate(identifier=self.client_id, args=self.args, model=self.model, criterion=self.criterion, dataset=self.test_set)
-        elif self.algorithm in []:
-            return mixed_evaluate(identifier=self.client_id, args=self.args, model=self.model, criterion=self.criterion, dataset=self.test_set)
-        elif self.algorithm in []:
-            return 
+        elif self.algorithm in ['superfed-mm', 'superfed-lm']:
+            return superfed_evaluate(identifier=self.client_id, args=self.args, model=self.model, criterion=self.criterion, dataset=self.test_set, current_round=current_round)

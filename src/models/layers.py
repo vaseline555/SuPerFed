@@ -31,8 +31,10 @@ class TwoParamConv(SubspaceConv):
 
 class LinesConv(TwoParamConv):
     def get_weight(self):
-        w = (1 - self.alpha) * self.weight + self.alpha * self.weight_local
+        w = (1 - self.lam) * self.weight + self.lam * self.weight_local
         return w
+
+    
 
 # dense layer
 class SubspaceLinear(nn.Linear):
@@ -49,9 +51,11 @@ class TwoParamLinear(SubspaceLinear):
 
 class LinesLinear(TwoParamLinear):
     def get_weight(self):
-        w = (1 - self.alpha) * self.weight + self.alpha * self.weight_local
+        w = (1 - self.lam) * self.weight + self.lam * self.weight_local
         return w
 
+    
+    
 # LSTM layer
 class SubspaceLSTM(nn.LSTM):
     def forward(self, x):
@@ -81,12 +85,14 @@ class LinesLSTM(TwoParamLSTM):
     def get_weight(self):
         weight_dict = dict()
         for l in range(self.num_layers):
-            weight_dict[f'weight_hh_l{l}_mixed'] = (1 - self.alpha) * getattr(self, f'weight_hh_l{l}') + self.alpha * getattr(self, f'weight_hh_l{l}_local') 
-            weight_dict[f'weight_ih_l{l}_mixed'] = (1 - self.alpha) * getattr(self, f'weight_ih_l{l}') + self.alpha * getattr(self, f'weight_ih_l{l}_local') 
+            weight_dict[f'weight_hh_l{l}_mixed'] = (1 - self.lam) * getattr(self, f'weight_hh_l{l}') + self.lam * getattr(self, f'weight_hh_l{l}_local') 
+            weight_dict[f'weight_ih_l{l}_mixed'] = (1 - self.lam) * getattr(self, f'weight_ih_l{l}') + self.lam * getattr(self, f'weight_ih_l{l}_local') 
             if self.bias:
-                weight_dict[f'bias_hh_l{l}_mixed'] = (1 - self.alpha) * getattr(self, f'bias_hh_l{l}') + self.alpha * getattr(self, f'bias_hh_l{l}_local') 
-                weight_dict[f'bias_ih_l{l}_mixed'] = (1 - self.alpha) * getattr(self, f'bias_ih_l{l}') + self.alpha * getattr(self, f'bias_ih_l{l}_local')
+                weight_dict[f'bias_hh_l{l}_mixed'] = (1 - self.lam) * getattr(self, f'bias_hh_l{l}') + self.lam * getattr(self, f'bias_hh_l{l}_local') 
+                weight_dict[f'bias_ih_l{l}_mixed'] = (1 - self.lam) * getattr(self, f'bias_ih_l{l}') + self.lam * getattr(self, f'bias_ih_l{l}_local')
         return weight_dict
+
+    
 
 # Embedding layer
 class SubspaceEmbedding(nn.Embedding):
@@ -105,9 +111,11 @@ class TwoParamEmbedding(SubspaceEmbedding):
                 
 class LinesEmbedding(TwoParamEmbedding):
     def get_weight(self):
-        w = (1 - self.alpha) * self.weight + self.alpha * self.weight_local
+        w = (1 - self.lam) * self.weight + self.lam * self.weight_local
         return w
 
+    
+    
 # BatchNorm layer
 class SubspaceBN(nn.BatchNorm2d):
     def forward(self, x):
@@ -158,6 +166,6 @@ class TwoParamBN(SubspaceBN):
         
 class LinesBN(TwoParamBN):
     def get_weight(self):
-        w = (1 - self.alpha) * self.weight + self.alpha * self.weight_local
-        b = (1 - self.alpha) * self.bias + self.alpha * self.bias_local
+        w = (1 - self.lam) * self.weight + self.lam * self.weight_local
+        b = (1 - self.lam) * self.bias + self.lam * self.bias_local
         return w, b

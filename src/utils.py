@@ -106,7 +106,7 @@ def split_data(args, raw_train):
         # shuffle finally and create a hashmap
         for j in range(args.K):
             np.random.seed(args.global_seed); np.random.shuffle(client_indices_list[j])
-            if len(client_indices_list[j]) > 2:
+            if len(client_indices_list[j]) > 10:
                 split_map[j] = client_indices_list[j]
         return split_map
     
@@ -118,6 +118,7 @@ def split_data(args, raw_train):
 class LEAFParser:
     def __init__(self, args):
         self.root = args.data_path
+        self.n_jobs = args.n_jobs
         self.dataset_name = args.dataset.lower()
         
         # declare appropriate dataset class
@@ -177,7 +178,7 @@ class LEAFParser:
             tr_dset.num_samples = merged_train['num_samples'][idx]; te_dset.num_samples = merged_test['num_samples'][idx]
             tr_dset._make_dataset(); te_dset._make_dataset()
             return (tr_dset, te_dset)
-        datasets = Parallel(n_jobs=os.cpu_count() // 4, prefer='threads')(delayed(construct_leaf)(idx, user) for idx, user in tqdm(enumerate(merged_train['users']), desc=f'[INFO] ...create datasets [LEAF - {self.dataset_name.upper()}]!'))
+        datasets = Parallel(n_jobs=self.n_jobs, prefer='threads')(delayed(construct_leaf)(idx, user) for idx, user in tqdm(enumerate(merged_train['users']), desc=f'[INFO] ...create datasets [LEAF - {self.dataset_name.upper()}]!'))
         split_map = dict(zip([i for i in range(len(merged_train['user_data']))], list(map(sum, zip(merged_train['num_samples'], merged_test['num_samples'])))))
         return split_map, datasets
     
@@ -243,7 +244,7 @@ def get_dataset(args):
         split_map = split_data(args, raw_train)
 
         # construct client datasets
-        client_datasets = Parallel(n_jobs=os.cpu_count() // 4, prefer='threads')(delayed(construct_dataset)(indices) for _, indices in tqdm(split_map.items(), desc=f'[INFO] ...create datasets [{args.dataset}]!'))
+        client_datasets = Parallel(n_jobs=args.n_jobs, prefer='threads')(delayed(construct_dataset)(indices) for _, indices in tqdm(split_map.items(), desc=f'[INFO] ...create datasets [{args.dataset}]!'))
         return split_map, raw_test, client_datasets
     
     elif args.dataset == 'TinyImageNet':
@@ -273,7 +274,7 @@ def get_dataset(args):
         split_map = split_data(args, raw_train)
         
         # construct client datasets
-        client_datasets = Parallel(n_jobs=os.cpu_count() // 4, prefer='threads')(delayed(construct_dataset)(indices) for _, indices in tqdm(split_map.items(), desc=f'[INFO] ...create datasets [{args.dataset}]!'))
+        client_datasets = Parallel(n_jobs=args.n_jobs, prefer='threads')(delayed(construct_dataset)(indices) for _, indices in tqdm(split_map.items(), desc=f'[INFO] ...create datasets [{args.dataset}]!'))
         return split_map, raw_test, client_datasets
     
     elif args.dataset in ['FEMNIST', 'Shakespeare']:
@@ -307,25 +308,25 @@ def init_weights(model, init_type, init_gain, seeds):
         if classname.find('BatchNorm2d') != -1:
             if hasattr(m, 'weight') and m.weight is not None:
                 torch.manual_seed(seeds[0]); torch.nn.init.normal_(m.weight.data, 1.0, init_gain)
-                if len(seeds) == 2: torch.manual_seed(seeds[-1]); torch.nn.init.normal_(m.weight_1.data, 1.0, init_gain)
+                if len(seeds) == 2: torch.manual_seed(seeds[-1]); torch.nn.init.normal_(m.weight_local.data, 1.0, init_gain)
             if hasattr(m, 'bias') and m.bias is not None:
                 torch.nn.init.constant_(m.bias.data, 0.0)
         elif hasattr(m, 'weight') and (classname.find('Conv') != -1 or classname.find('Linear') != -1):
             if init_type == 'normal':
                 torch.manual_seed(seeds[0]); torch.nn.init.normal_(m.weight.data, 0.0, init_gain)
-                if len(seeds) == 2: torch.manual_seed(seeds[-1]); torch.nn.init.normal_(m.weight_1.data, 0.0, init_gain)
+                if len(seeds) == 2: torch.manual_seed(seeds[-1]); torch.nn.init.normal_(m.weight_local.data, 0.0, init_gain)
             elif init_type == 'xavier':
                 torch.manual_seed(seeds[0]); torch.nn.init.xavier_normal_(m.weight.data, gain=init_gain)
-                if len(seeds) == 2: torch.manual_seed(seeds[-1]); torch.nn.init.xavier_normal_(m.weight_1.data, gain=init_gain)
+                if len(seeds) == 2: torch.manual_seed(seeds[-1]); torch.nn.init.xavier_normal_(m.weight_local.data, gain=init_gain)
             elif init_type == 'xavier_uniform':
                 torch.manual_seed(seeds[0]); torch.nn.init.xavier_uniform_(m.weight.data, gain=1.0)
-                if len(seeds) == 2: torch.manual_seed(seeds[-1]); torch.nn.init.xavier_uniform_(m.weight_1.data, gain=1.0)
+                if len(seeds) == 2: torch.manual_seed(seeds[-1]); torch.nn.init.xavier_uniform_(m.weight_local.data, gain=1.0)
             elif init_type == 'kaiming':
                 torch.manual_seed(seeds[0]); torch.nn.init.kaiming_normal_(m.weight.data, a=0, mode='fan_in')
-                if len(seeds) == 2: torch.manual_seed(seeds[-1]); torch.nn.init.kaiming_normal_(m.weight_1.data, a=0, mode='fan_in')
+                if len(seeds) == 2: torch.manual_seed(seeds[-1]); torch.nn.init.kaiming_normal_(m.weight_local.data, a=0, mode='fan_in')
             elif init_type == 'orthogonal':
                 torch.manual_seed(seeds[0]); torch.nn.init.orthogonal_(m.weight.data, gain=init_gain)
-                if len(seeds) == 2: torch.manual_seed(seeds[-1]); torch.nn.init.orthogonal_(m.weight_1.data, gain=init_gain)
+                if len(seeds) == 2: torch.manual_seed(seeds[-1]); torch.nn.init.orthogonal_(m.weight_local.data, gain=init_gain)
             elif init_type == 'none':  # uses pytorch's default init method
                 m.reset_parameters()
             else:
@@ -336,26 +337,26 @@ def init_weights(model, init_type, init_gain, seeds):
             for l in range(m.num_layers):
                 if init_type == 'normal':
                     torch.manual_seed(seeds[0]); torch.nn.init.normal_(getattr(m, f'weight_hh_l{l}'), 0.0, init_gain); torch.nn.init.normal_(getattr(m, f'weight_ih_l{l}'), 0.0, init_gain)
-                    if len(seeds) == 2: torch.manual_seed(seeds[-1]); torch.nn.init.normal_(getattr(m, f'weight_hh_l{l}_1'), 0.0, init_gain); torch.nn.init.normal_(getattr(m, f'weight_ih_l{l}_1'), 0.0, init_gain)
+                    if len(seeds) == 2: torch.manual_seed(seeds[-1]); torch.nn.init.normal_(getattr(m, f'weight_hh_l{l}_local'), 0.0, init_gain); torch.nn.init.normal_(getattr(m, f'weight_ih_l{l}_local'), 0.0, init_gain)
                 elif init_type == 'xavier':
                     torch.manual_seed(seeds[0]); torch.nn.init.xavier_normal_(getattr(m, f'weight_hh_l{l}'), gain=init_gain); torch.nn.init.xavier_normal_(getattr(m, f'weight_ih_l{l}'), gain=init_gain)
-                    if len(seeds) == 2: torch.manual_seed(seeds[-1]); torch.nn.init.xavier_normal_(getattr(m, f'weight_hh_l{l}_1'), gain=init_gain); torch.nn.init.xavier_normal_(getattr(m, f'weight_ih_l{l}_1'), gain=init_gain)
+                    if len(seeds) == 2: torch.manual_seed(seeds[-1]); torch.nn.init.xavier_normal_(getattr(m, f'weight_hh_l{l}_local'), gain=init_gain); torch.nn.init.xavier_normal_(getattr(m, f'weight_ih_l{l}_local'), gain=init_gain)
                 elif init_type == 'xavier_uniform':
                     torch.manual_seed(seeds[0]); torch.nn.init.xavier_uniform_(getattr(m, f'weight_hh_l{l}'), gain=1.0); torch.nn.init.xavier_uniform_(getattr(m, f'weight_ih_l{l}'), gain=1.0)
-                    if len(seeds) == 2: torch.manual_seed(seeds[-1]); torch.nn.init.xavier_uniform_(getattr(m, f'weight_hh_l{l}_1'), gain=1.0); torch.nn.init.xavier_uniform_(getattr(m, f'weight_ih_l{l}_1'), gain=1.0)
+                    if len(seeds) == 2: torch.manual_seed(seeds[-1]); torch.nn.init.xavier_uniform_(getattr(m, f'weight_hh_l{l}_local'), gain=1.0); torch.nn.init.xavier_uniform_(getattr(m, f'weight_ih_l{l}_local'), gain=1.0)
                 elif init_type == 'kaiming':
                     torch.manual_seed(seeds[0]); torch.nn.init.kaiming_normal_(getattr(m, f'weight_hh_l{l}'), a=0, mode='fan_in'); torch.nn.init.kaiming_normal_(getattr(m, f'weight_ih_l{l}'), a=0, mode='fan_in')
-                    if len(seeds) == 2: torch.manual_seed(seeds[-1]); torch.nn.init.kaiming_normal_(getattr(m, f'weight_hh_l{l}_1'), a=0, mode='fan_in'); torch.nn.init.kaiming_normal_(getattr(m, f'weight_ih_l{l}_1'), a=0, mode='fan_in')
+                    if len(seeds) == 2: torch.manual_seed(seeds[-1]); torch.nn.init.kaiming_normal_(getattr(m, f'weight_hh_l{l}_local'), a=0, mode='fan_in'); torch.nn.init.kaiming_normal_(getattr(m, f'weight_ih_l{l}_local'), a=0, mode='fan_in')
                 elif init_type == 'orthogonal':
                     torch.manual_seed(seeds[0]); torch.nn.init.orthogonal_(getattr(m, f'weight_hh_l{l}'), gain=init_gain); torch.nn.init.orthogonal_(getattr(m, f'weight_ih_l{l}'), gain=init_gain)
-                    if len(seeds) == 2: torch.manual_seed(seeds[-1]); torch.nn.init.orthogonal_(getattr(m, f'weight_hh_l{l}_1'), gain=init_gain); torch.nn.init.orthogonal_(getattr(m, f'weight_ih_l{l}_1'), gain=init_gain)
+                    if len(seeds) == 2: torch.manual_seed(seeds[-1]); torch.nn.init.orthogonal_(getattr(m, f'weight_hh_l{l}_local'), gain=init_gain); torch.nn.init.orthogonal_(getattr(m, f'weight_ih_l{l}_local'), gain=init_gain)
                 elif init_type == 'none':  # uses pytorch's default init method
                     m.reset_parameters()
                 else:
                     raise NotImplementedError(f'[ERROR] Initialization method {init_type} is not implemented!')
                 if m.bias is True:
                     torch.nn.init.constant_(getattr(m, f'bias_hh_l{l}'), 0.0); torch.nn.init.constant_(getattr(m, f'bias_ih_l{l}'), 0.0)
-                    if len(seeds) == 2: torch.nn.init.constant_(getattr(m, f'bias_hh_l{l}_1'), 0.0); torch.nn.init.constant_(getattr(m, f'bias_ih_l{l}_1'), 0.0)
+                    if len(seeds) == 2: torch.nn.init.constant_(getattr(m, f'bias_hh_l{l}_local'), 0.0); torch.nn.init.constant_(getattr(m, f'bias_ih_l{l}_local'), 0.0)
     model.apply(init_func)
     return model
 
@@ -363,7 +364,7 @@ def initiate_model(model, args):
     """Initiate model instance; use multi-GPU if available.
     
     Args:
-        model (nn.Module): model instance to initiate
+        model (torch.nn.Module): model instance to initiate
         args (argument): parsed arguments
     
     Returns:
@@ -382,6 +383,29 @@ def initiate_model(model, args):
     return model_instance
 
 
+#######################
+# Model interpolation #
+#######################
+def set_lambda(module, lam, layerwise=False):
+    """Set model interpolation constant.
+    
+    Args:
+        module (torch.nn.Module): module
+        lam (float): constant used for interpolation (0 means a retrieval of a global model, 1 means a retrieval of a local model)
+        layerwise (bool): set different lambda layerwise or not
+    """
+    if (
+        isinstance(module, torch.nn.Conv2d) 
+        or isinstance(module, torch.nn.BatchNorm2d)
+        or isinstance(module, torch.nn.Linear)
+        or isinstance(module, torch.nn.LSTM)
+        or isinstance(module, torch.nn.Embedding)
+    ):
+        if layerwise:
+            lam = np.random.uniform(0.0, 1.0)
+        setattr(module, 'lam', lam)
+
+            
 
 
 ###########
@@ -494,13 +518,13 @@ class CalibrationError(torch.nn.Module):
 ###########################
 # Record metrics & losses #
 ###########################
-def record_results(args, writer, results, mode, step, loss, acc1, acc5, ece, mce):
+def record_results(args, writer, container, mode, step, loss, acc1, acc5, ece, mce):
     # save as results
-    results[f'{mode}_loss_mean'].append(loss.mean().item()); results[f'{mode}_loss_std'].append(loss.std(unbiased=False).item())
-    results[f'{mode}_acc1_mean'].append(acc1.mean().item()); results[f'{mode}_acc1_std'].append(acc1.std(unbiased=False).item())
-    results[f'{mode}_acc5_mean'].append(acc5.mean().item()); results[f'{mode}_acc5_std'].append(acc5.std(unbiased=False).item())
-    results[f'{mode}_ece_mean'].append(ece.mean().item()); results[f'{mode}_ece_std'].append(ece.std(unbiased=False).item())
-    results[f'{mode}_mce_mean'].append(mce.mean().item()); results[f'{mode}_mce_std'].append(mce.std(unbiased=False).item())
+    container[f'{mode}_loss_mean'].append(loss.mean().float().item()); container[f'{mode}_loss_std'].append(loss.std(unbiased=False).float().item())
+    container[f'{mode}_acc1_mean'].append(acc1.mean().float().item()); container[f'{mode}_acc1_std'].append(acc1.std(unbiased=False).float().item())
+    container[f'{mode}_acc5_mean'].append(acc5.mean().float().item()); container[f'{mode}_acc5_std'].append(acc5.std(unbiased=False).float().item())
+    container[f'{mode}_ece_mean'].append(ece.mean().float().item()); container[f'{mode}_ece_std'].append(ece.std(unbiased=False).float().item())
+    container[f'{mode}_mce_mean'].append(mce.mean().float().item()); container[f'{mode}_mce_std'].append(mce.std(unbiased=False).float().item())
 
     # record metrics and loss
     writer.add_scalars(
@@ -528,7 +552,7 @@ def record_results(args, writer, results, mode, step, loss, acc1, acc5, ece, mce
         {'mce_mean': mce.mean()},
         step
     )
-    return results, loss, acc1, acc5, ece, mce
+    return container, loss, acc1, acc5, ece, mce
 
 
 
@@ -553,3 +577,28 @@ def plot_delta_histogram(args, writer, mode, step, delta):
     
     # save
     fig.savefig(f'./{args.plot_path}/{args.exp_name}/delta_histogram_{mode}_{str(int(step * args.eval_every)).zfill(4)}.png')
+    
+    
+    
+##################################
+# Plot metrics changed by lambda #
+##################################
+def plot_by_lambda(args, step, results):
+    color_map = {'Loss': 'b', 'Top 1 Accuracy': 'g', 'Top 5 Accuracy': 'r', 'Expected Calibration Error': 'c', 'Maximum Calibration Error': 'm'}
+    
+    # calculate statistics
+    mean = torch.stack(results).mean(0)
+    std = torch.stack(results).std(0, unbiased=True)
+    
+    # make figure
+    fig, ax = plt.subplots(nrows=1, ncols=5, figsize=(15, 3))
+    plt.xticks(np.arange(0.0, 1.1, 0.1))
+    ax[0].errorbar(torch.arange(0.0, 1.1, 0.1), mean[0], yerr=stds[0], color='c'); ax[0].set_title('Loss'); ax[0].set_xlabel(r'$\alpha$')
+    ax[1].errorbar(torch.arange(0.0, 1.1, 0.1), mean[1], yerr=stds[1], color='m'); ax[1].set_title('Top 1 Accuracy'); ax[0].set_xlabel(r'$\alpha$')
+    ax[2].errorbar(torch.arange(0.0, 1.1, 0.1), mean[2], yerr=stds[2], color='y'); ax[2].set_title('Top 5 Accuracy'); ax[0].set_xlabel(r'$\alpha$')
+    ax[3].errorbar(torch.arange(0.0, 1.1, 0.1), mean[3], yerr=stds[3], color='b'); ax[3].set_title('Exepcted Calibration Error'); ax[0].set_xlabel(r'$\alpha$')
+    ax[4].errorbar(torch.arange(0.0, 1.1, 0.1), mean[4], yerr=stds[4], color='k'); ax[4].set_title('Maximum Calibration Error'); ax[0].set_xlabel(r'$\alpha$')
+    plt.tight_layout()
+
+    # save
+    fig.savefig(f'./{args.plot_path}/{args.exp_name}/lambda_dynamics_{str(int(step * args.eval_every)).zfill(4)}.png')

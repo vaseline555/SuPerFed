@@ -10,7 +10,7 @@ from joblib import Parallel, delayed
 
 from .client import Client
 from .algorithm import *
-from .utils import record_results, plot_delta_histogram
+from .utils import record_results, plot_delta_histogram, plot_by_lambda
 
 
 
@@ -65,7 +65,7 @@ class Server(object):
         assert self._round == 0
         
         # setup clients (assign dataset, pass model, optimizer and criterion)
-        self.clients = Parallel(n_jobs=os.cpu_count() // 4, prefer='threads')(delayed(self.create_clients)(k, training_set, test_set) for k, (training_set, test_set) in tqdm(enumerate(self.client_datasets), desc='[INFO] ...enroll clients to the server!'))
+        self.clients = Parallel(n_jobs=self.args.n_jobs, prefer='threads')(delayed(self.create_clients)(k, training_set, test_set) for k, (training_set, test_set) in tqdm(enumerate(self.client_datasets), desc='[INFO] ...enroll clients to the server!'))
         del self.client_datasets; gc.collect()
         
         # filter out clients with zero samples
@@ -107,7 +107,7 @@ class Server(object):
             self.clients[idx].model.load_state_dict(federated_model_at_client)
             
         # transmit parameters of a federated model only (alpha = 0)
-        elif self.algorithm in ['ditto', 'apfl', 'superfed-mm', 'superfed-lm']:
+        elif self.algorithm in ['ditto', 'apfl', 'pfedme', 'superfed-mm', 'superfed-lm']:
             global_model = {k: v for k, v in self.model.state_dict().items() if '_local' not in k}
             federated_model_at_client = copy.deepcopy(self.clients[idx].model.state_dict())
             federated_model_at_client.update(global_model)
@@ -116,13 +116,13 @@ class Server(object):
     def evaluate_clients(self, idx):
         """Call `client_evaluate` function of clients.
         """
-        loss, acc1, acc5, ece, mce = self.clients[idx].client_evaluate()
+        loss, acc1, acc5, ece, mce = self.clients[idx].client_evaluate(self._round)
         return loss, acc1, acc5, ece, mce
     
-    def update_clients(self, idx, epoch):
+    def update_clients(self, idx, epochs):
         """Call `client_update` function of clients.
         """
-        self.clients[idx].client_update(self._round, epoch)
+        self.clients[idx].client_update(self._round, epochs)
         return len(self.clients[idx])
     
     def aggregate_model(self, sampled_client_indices, coefficients):
@@ -152,7 +152,7 @@ class Server(object):
                         else:
                             aggregated_weights[key] += coefficients[it] * local_weights[key]
                     else:
-                        aggregated_weights[key] = local_weights[key]
+                        aggregated_weights[key] = self.model.state_dict()[key]
         
         # aggregate paramaeters NOT attached to the penultimate layer
         elif self.algorithm in ['fedper', 'fedrep']:
@@ -165,10 +165,10 @@ class Server(object):
                         else:
                             aggregated_weights[key] += coefficients[it] * local_weights[key]
                     else:
-                        aggregated_weights[key] = local_weights[key]
+                        aggregated_weights[key] = self.model.state_dict()[key]
 
         # aggregate parameters of a federated model only (alpha = 0)
-        elif self.algorithm in ['ditto', 'apfl', 'superfed-mm', 'superfed-lm']:
+        elif self.algorithm in ['ditto', 'apfl', 'pfedme', 'superfed-mm', 'superfed-lm']:
             for it, idx in tqdm(enumerate(sampled_client_indices), leave=False):
                 local_weights = self.clients[idx].model.state_dict()
                 for key in self.model.state_dict().keys():
@@ -178,7 +178,7 @@ class Server(object):
                         else:
                             aggregated_weights[key] += coefficients[it] * local_weights[key]
                     else:
-                        aggregated_weights[key] = local_weights[key]
+                        aggregated_weights[key] = self.model.state_dict()[key]
         
         # replace the model in the server
         self.model.load_state_dict(aggregated_weights)
@@ -195,7 +195,7 @@ class Server(object):
         
         
         # 2) broadcast a global model
-        _ = Parallel(n_jobs=os.cpu_count() // 4, prefer='threads')(delayed(self.transmit_model)(idx) for idx in tqdm(sampled_client_indices, desc=f'[INFO] [Round: {str(self._round).zfill(4)}] ...transmit global models to clients!'))
+        _ = Parallel(n_jobs=self.args.n_jobs, prefer='threads')(delayed(self.transmit_model)(idx) for idx in tqdm(sampled_client_indices, desc=f'[INFO] [Round: {str(self._round).zfill(4)}] ...transmit global models to clients!'))
         
         ## notice
         print(f'[INFO] [Round: {str(self._round).zfill(4)}] ...successfully transmitted models to {str(len(sampled_client_indices))} selected clients!'); gc.collect()
@@ -203,7 +203,7 @@ class Server(object):
         
         
         # 3) update client models
-        selected_sizes = Parallel(n_jobs=os.cpu_count() // 4, prefer='threads')(delayed(self.update_clients)(idx, None) for idx in tqdm(sampled_client_indices, desc=f'[INFO] [Round: {str(self._round).zfill(4)}] ...update models of selected clients!'))
+        selected_sizes = Parallel(n_jobs=self.args.n_jobs, prefer='threads')(delayed(self.update_clients)(idx, None) for idx in tqdm(sampled_client_indices, desc=f'[INFO] [Round: {str(self._round).zfill(4)}] ...update models of selected clients!'))
 
         ## notice
         print(f'[INFO] [Round: {str(self._round).zfill(4)}] ...{len(sampled_client_indices)} clients are selected and updated!'); gc.collect()
@@ -223,11 +223,14 @@ class Server(object):
         
         
         # 5) evaluate personalization performance of selected clients
-        results = Parallel(n_jobs=os.cpu_count() // 4, prefer='threads')(delayed(self.evaluate_clients)(idx) for idx in tqdm(sampled_client_indices, desc=f'[INFO] [Round: {str(self._round).zfill(4)}] ...evaluate a global model in selected clients!'))
-        
+        results = Parallel(n_jobs=self.args.n_jobs, prefer='threads')(delayed(self.evaluate_clients)(idx) for idx in tqdm(sampled_client_indices, desc=f'[INFO] [Round: {str(self._round).zfill(4)}] ...evaluate a global model in selected clients!'))
         
         ## record results
-        self.results, per_loss, per_acc1, per_acc5, per_ece, per_mce = record_results(self.args, self.writer, self.results, 'selected', self._round, *torch.tensor(results).T)
+        if self.algorithm in ['superfed-mm', 'superfed-lm']:
+            results_all = torch.stack([torch.stack(tensor) for tensor in results]) # args.K x 5 x 21
+            self.results, per_loss, per_acc1, per_acc5, per_ece, per_mce = record_results(self.args, self.writer, self.results, 'selected', self._round, *results_all.mean(0).mean(1))
+        else:
+            self.results, per_loss, per_acc1, per_acc5, per_ece, per_mce = record_results(self.args, self.writer, self.results, 'selected', self._round, *torch.tensor(results).T)
    
         ## notice 
         print(f'[INFO] [Round: {str(self._round).zfill(4)}] ...finished evaluation of selected clients!'); gc.collect()
@@ -235,12 +238,18 @@ class Server(object):
     
     def evaluate_personalized_model(self):
         """Evaluate the personalization performance of given algorithm using all of the client-side holdout dataset.
+            
+            * Set `n_jobs=4` to prevent OOM error
         """
         # 1) evaluate baseline performance of all clients
-        results = Parallel(n_jobs=os.cpu_count() // 4, prefer='threads')(delayed(self.evaluate_clients)(idx) for idx in tqdm(range(self.num_clients), desc=f'[INFO] [Round: {str(self._round).zfill(4)}] ...evaluate a baseline performance of ALL clients!'))
+        results = Parallel(n_jobs=4, prefer='threads')(delayed(self.evaluate_clients)(idx) for idx in tqdm(range(self.num_clients), desc=f'[INFO] [Round: {str(self._round).zfill(4)}] ...evaluate a baseline performance of ALL clients!'))
         
         ## record results
-        self.results, base_loss, base_acc1, base_acc5, base_ece, base_mce = record_results(self.args, self.writer, self.results, 'baseline_all', self._round // self.args.eval_every, *torch.tensor(results).T)
+        if self.algorithm in ['superfed-mm', 'superfed-lm']:
+            results_all = torch.stack([torch.stack(tensor) for tensor in results]) # args.K x 5 x 21
+            self.results, per_loss, per_acc1, per_acc5, per_ece, per_mce = record_results(self.args, self.writer, self.results, 'selected', self._round, *results_all.mean(0).mean(1))
+        else:
+            self.results, base_loss, base_acc1, base_acc5, base_ece, base_mce = record_results(self.args, self.writer, self.results, 'baseline_all', self._round // self.args.eval_every, *torch.tensor(results).T)
 
         ## notice
         print(f'[INFO] [Round: {str(self._round).zfill(4)}] ...finished baseline evaluation of ALL clients!'); gc.collect()
@@ -248,15 +257,22 @@ class Server(object):
         
         
         # 2) update all client models in a small step (i.e., one epoch)
-        selected_sizes = Parallel(n_jobs=os.cpu_count() // 4, prefer='threads')(delayed(self.update_clients)(idx, 1) for idx in tqdm(range(self.num_clients), desc=f'[INFO] [Round: {str(self._round).zfill(4)}] ...update models of ALL clients by one step!'))
+        selected_sizes = Parallel(n_jobs=4, prefer='threads')(delayed(self.update_clients)(idx, 1) for idx in tqdm(range(self.num_clients), desc=f'[INFO] [Round: {str(self._round).zfill(4)}] ...update models of ALL clients by one step!'))
         
         
         
         # 3) evaluate personalization performance of all clients
-        results = Parallel(n_jobs=os.cpu_count() // 4, prefer='threads')(delayed(self.evaluate_clients)(idx) for idx in tqdm(range(self.num_clients), desc=f'[INFO] [Round: {str(self._round).zfill(4)}] ...evaluate a personalization performance of ALL clients!'))
+        results = Parallel(n_jobs=4, prefer='threads')(delayed(self.evaluate_clients)(idx) for idx in tqdm(range(self.num_clients), desc=f'[INFO] [Round: {str(self._round).zfill(4)}] ...evaluate a personalization performance of ALL clients!'))
         
         ## record results
-        self.results, per_loss, per_acc1, per_acc5, per_ece, per_mce = record_results(self.args, self.writer, self.results, 'personalized_all', self._round // self.args.eval_every, *torch.tensor(results).T)
+        if self.algorithm in ['superfed-mm', 'superfed-lm']:
+            results_all = torch.stack([torch.stack(tensor) for tensor in results]) # args.K x 5 x 21
+            self.results, per_loss, per_acc1, per_acc5, per_ece, per_mce = record_results(self.args, self.writer, self.results, 'selected', self._round, *results_all.mean(0).mean(1))
+            
+            # plot change dynamics of loss & metrics
+            plot_by_lambda(self.args, self._round // self.args.eval_every, results_all)
+        else:
+            self.results, per_loss, per_acc1, per_acc5, per_ece, per_mce = record_results(self.args, self.writer, self.results, 'personalized_all', self._round // self.args.eval_every, *torch.tensor(results).T)
         
         ## notice
         print(f'[INFO] [Round: {str(self._round).zfill(4)}] ...finished personalization evaluation of ALL clients!'); gc.collect()
@@ -275,6 +291,7 @@ class Server(object):
         """Evaluate the global model at the server using the server-side holdout dataset.
         (Possible only if the algorithm supports an exchange of whole parameters)
         """
+        import pdb;pdb.set_trace()
         try:
             assert self.server_testset is not None, '[ERROR] Server should have global testset!'
             assert self.algorithm in ['fedavg', 'fedprox', 'ditto', 'apfl', 'pfedme', 'l2gd', 'superfed-mm', 'superfed-lm'], '[ERROR] Algorithm should support an exchange of whole model parameters!'
@@ -284,10 +301,10 @@ class Server(object):
         # algorithm-specific evaluation is needed
         if self.algorithm in ['fedavg', 'fedprox']:
             return basic_evaluate(None, self.args, self.model, self.criterion, self.server_testset)
-        elif self.algorithm in ['ditto', 'apfl', 'pfedme', 'l2gd']:
-            return global_evaluate(None, self.args, self.model, self.criterion, self.server_testset)
         elif self.algorithm in ['superfed-mm', 'superfed-lm']:
-            return superfed_evaluate(None, self.args, self.model, self.criterion, self.server_testset)
+            results = superfed_evaluate(None, self.args, self.model, self.criterion, self.server_testset)
+            lowest_loss_idx = results[0].argmin()
+            return results[:, lowest_loss_idx].squeeze()
         
     def fit(self):
         """Execute the whole process of the federated learning.
@@ -301,21 +318,21 @@ class Server(object):
             # evaluate personalization performance on all clients
             if (self._round % self.args.eval_every == 0) or (self._round == self.num_rounds):
                 loss_delta, acc1_delta, acc5_delta, ece_delta, mce_delta = self.evaluate_personalized_model()
-                
-                # track  deltas
-                self.results['loss_delta_mean'].append(loss_delta.mean().item()); self.results['loss_delta_std'].append(loss_delta.std(unbiased=False).item())
-                self.results['acc1_delta_mean'].append(acc1_delta.mean().item()); self.results['acc1_delta_std'].append(acc1_delta.std(unbiased=False).item())
-                self.results['acc5_delta_mean'].append(acc5_delta.mean().item()); self.results['acc5_delta_std'].append(acc5_delta.std(unbiased=False).item())
-                self.results['ece_delta_mean'].append(ece_delta.mean().item()); self.results['ece_delta_std'].append(ece_delta.std(unbiased=False).item())
-                self.results['mce_delta_mean'].append(mce_delta.mean().item()); self.results['mce_delta_std'].append(mce_delta.std(unbiased=False).item())
-                
+
+                # track deltas
+                self.results['loss_delta_mean'].append(loss_delta.mean().float().item()); self.results['loss_delta_std'].append(loss_delta.std(unbiased=False).float().item())
+                self.results['acc1_delta_mean'].append(acc1_delta.mean().float().item()); self.results['acc1_delta_std'].append(acc1_delta.std(unbiased=False).float().item())
+                self.results['acc5_delta_mean'].append(acc5_delta.mean().float().item()); self.results['acc5_delta_std'].append(acc5_delta.std(unbiased=False).float().item())
+                self.results['ece_delta_mean'].append(ece_delta.mean().float().item()); self.results['ece_delta_std'].append(ece_delta.std(unbiased=False).float().item())
+                self.results['mce_delta_mean'].append(mce_delta.mean().float().item()); self.results['mce_delta_std'].append(mce_delta.std(unbiased=False).float().item())
+
                 # plot histogram
                 plot_delta_histogram(self.args, self.writer, 'Loss', self._round // self.args.eval_every, loss_delta)
                 plot_delta_histogram(self.args, self.writer, 'Top 1 Accuracy', self._round // self.args.eval_every, acc1_delta)
                 plot_delta_histogram(self.args, self.writer, 'Top 5 Accuracy', self._round // self.args.eval_every, acc5_delta)
                 plot_delta_histogram(self.args, self.writer, 'Expected Calibration Error', self._round // self.args.eval_every, ece_delta)
                 plot_delta_histogram(self.args, self.writer, 'Maximum Calibration Error', self._round // self.args.eval_every, mce_delta)
-                
+     
             # evaluate server-side model's performance using server-side holdout set if possible
             results = self.evaluate_global_model()
             

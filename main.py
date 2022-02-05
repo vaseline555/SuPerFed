@@ -1,6 +1,6 @@
 import os
 import sys
-import json
+import pickle
 import time
 import torch
 import random
@@ -11,7 +11,7 @@ import numpy as np
 from torch.utils.tensorboard import SummaryWriter
 
 from src.server import Server
-from src.utils import launch_tensor_board, initiate_model, get_dataset
+from src.utils import launch_tensor_board, get_dataset
 from src.models.builder import Builder
 from src.models import models
 
@@ -53,6 +53,7 @@ def main(args, writer):
     else:
         block = None
     model = getattr(models, args.model_name)(builder, args, block)
+    model.to('cpu')
 
     
     
@@ -69,11 +70,11 @@ def main(args, writer):
     central_server.fit()
 
     # save resulting losses and metrics
-    with open(os.path.join(args.result_path, f'{args.exp_name}/final_result.json'), 'w') as result_file:
+    with open(os.path.join(args.result_path, f'{args.exp_name}/final_result.pkl'), 'wb') as result_file:
         arguments = {'arguments': {str(arg): getattr(args, arg) for arg in vars(args)}}
         sample_stats = {'sample_statistics': split_map}
         results = {'results': {key: value for key, value in central_server.results.items() if len(value) > 0}}
-        json.dump({**arguments, **sample_stats, **results}, result_file)
+        pickle.dump({**arguments, **sample_stats, **results}, result_file)
 
 if __name__ == "__main__":
     # parse user inputs as arguments
@@ -89,6 +90,7 @@ if __name__ == "__main__":
     parser.add_argument('--plot_path', help='plot path', type=str, default='./plot')
     parser.add_argument('--tb_port', help='TensorBoard port number', type=int, default=6006)
     parser.add_argument('--tb_host', help='TensorBoard host address', type=str, default='0.0.0.0')
+    parser.add_argument('--n_jobs', help='workeres for multiprocessing', type=int, default=-1)
     
     # dataset related arguments
     parser.add_argument('--dataset', help='name of dataset to use for an experiment: [MNIST|CIFAR10|CIFAR100|TinyImageNet|FEMNIST|Shakespeare|]', type=str, choices=['MNIST', 'CIFAR10', 'CIFAR100', 'TinyImageNet', 'FEMNIST', 'Shakespeare'], required=True)
@@ -120,9 +122,10 @@ if __name__ == "__main__":
     # optimization related arguments
     parser.add_argument('--lr', help='learning rate of each client', type=float, default=0.01)
     parser.add_argument('--lr_decay', help='magnitude of learning rate decay at every round', type=float, default=0.99)
-    parser.add_argument('--mu',help='constant for proximity regularization term (for fedprox, ditto, pfedme, superfed)', type=float, default=0.01)
-    parser.add_argument('--tau', help='constant for fine tuning head or updating a local model (for fedrep, ditto, pfedme)', type=int, default=5)
-    parser.add_argument('--alpha', help='constant for mixing models (for apfl)', type=float, default=0.25)
+    parser.add_argument('--mu',help='constant for regularization term (for fedprox, ditto, pfedme, superfed)', type=float, default=0.01)
+    parser.add_argument('--nu', help='constant for low-loss subspace construction term', type=float, default=1.0)
+    parser.add_argument('--tau', help='constant for fine tuning head or updating a local model (for fedrep, ditto)', type=int, default=5)
+    parser.add_argument('--apfl_constant', help='constant for mixing models (for apfl)', type=float, default=0.25)
     
     # model related arguments
     parser.add_argument('--model_name', help='model to use [TwoNN|TwoCNN|NextCharLM|ResNet18|MobileNetv2]', type=str, choices=['TwoNN', 'TwoCNN', 'NextCharLM', 'ResNet18', 'MobileNetv2'])
