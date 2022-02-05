@@ -241,7 +241,12 @@ class Server(object):
             
             * Set `n_jobs=4` to prevent OOM error
         """
-        # 1) evaluate baseline performance of all clients
+        # 1) broadcast current global model to all clients
+        _ = Parallel(n_jobs=self.args.n_jobs, prefer='threads')(delayed(self.transmit_model)(idx) for idx in tqdm(range(self.num_clients), desc=f'[INFO] [Round: {str(self._round).zfill(4)}] ...transmit global models to ALL clients!'))
+        
+        
+        
+        # 2) evaluate baseline performance of all clients
         results = Parallel(n_jobs=4, prefer='threads')(delayed(self.evaluate_clients)(idx) for idx in tqdm(range(self.num_clients), desc=f'[INFO] [Round: {str(self._round).zfill(4)}] ...evaluate a baseline performance of ALL clients!'))
         
         ## record results
@@ -256,12 +261,12 @@ class Server(object):
         
         
         
-        # 2) update all client models in a small step (i.e., one epoch)
-        selected_sizes = Parallel(n_jobs=4, prefer='threads')(delayed(self.update_clients)(idx, 1) for idx in tqdm(range(self.num_clients), desc=f'[INFO] [Round: {str(self._round).zfill(4)}] ...update models of ALL clients by one step!'))
+        # 3) update all client models in a small step (i.e., one epoch)
+        _ = Parallel(n_jobs=4, prefer='threads')(delayed(self.update_clients)(idx, 1) for idx in tqdm(range(self.num_clients), desc=f'[INFO] [Round: {str(self._round).zfill(4)}] ...update models of ALL clients by one step!'))
         
         
         
-        # 3) evaluate personalization performance of all clients
+        # 4) evaluate personalization performance of all clients
         results = Parallel(n_jobs=4, prefer='threads')(delayed(self.evaluate_clients)(idx) for idx in tqdm(range(self.num_clients), desc=f'[INFO] [Round: {str(self._round).zfill(4)}] ...evaluate a personalization performance of ALL clients!'))
         
         ## record results
@@ -279,7 +284,7 @@ class Server(object):
         
         
         
-        # 4) calculate delta metrics 
+        # 5) calculate delta metrics 
         loss_delta = per_loss - base_loss
         acc1_delta = per_acc1 - base_acc1
         acc5_delta = per_acc5 - base_acc5
