@@ -288,7 +288,7 @@ def apfl_update(identifier, args, model, criterion, dataset, optimizer, lr, epoc
 
     # prepare optimizer       
     local_optimizer = optimizer(
-        filter(lambda parameter: parameter.requires_grad, personalized_model.parameters()), 
+        [parameter for name, parameter in personalized_model.named_parameters() if '_local' in name], 
         lr=lr, 
         momentum=0.9
     )
@@ -309,7 +309,7 @@ def apfl_update(identifier, args, model, criterion, dataset, optimizer, lr, epoc
     
     # prepare optimizer       
     global_optimizer = optimizer(
-        filter(lambda parameter: parameter.requires_grad, model.parameters()), 
+        [parameter for name, parameter in model.named_parameters() if '_local' not in name], 
         lr=lr, 
         momentum=0.9
     )
@@ -406,11 +406,7 @@ def ditto_update(identifier, args, model, criterion, dataset, optimizer, lr, epo
             parameter.requires_grad = True
     
     # prepare optimizer       
-    global_optimizer = optimizer(
-        filter(lambda parameter: parameter.requires_grad, model.parameters()), 
-        lr=lr, 
-        momentum=0.9
-    )
+    global_optimizer = optimizer(model.parameters(), lr=lr, momentum=0.9)
 
     # update global model 
     for e in range(args.E if epochs is None else epochs):
@@ -463,11 +459,7 @@ def ditto_update(identifier, args, model, criterion, dataset, optimizer, lr, epo
             parameter.requires_grad = False
     
     # prepare optimizer       
-    local_optimizer = optimizer(
-        filter(lambda parameter: parameter.requires_grad, model.parameters()), 
-        lr=lr, 
-        momentum=0.9
-    )
+    local_optimizer = optimizer(model.parameters(), lr=lr, momentum=0.9)
     
     # then update local model
     for e in range(args.tau if epochs is None else epochs):
@@ -548,11 +540,7 @@ def pfedme_update(identifier, args, model, criterion, dataset, optimizer, lr, ep
             parameter.requires_grad = False
     
     # prepare optimizer       
-    optimizer = optimizer(
-        filter(lambda parameter: parameter.requires_grad, model.parameters()), 
-        lr=lr, 
-        momentum=0.9
-    )
+    optimizer = optimizer(model.parameters(), lr=lr, momentum=0.9)
     
     # update local model first
     for e in range(args.E if epochs is None else epochs):
