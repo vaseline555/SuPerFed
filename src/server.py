@@ -19,9 +19,9 @@ class Server(object):
     
     Terms:
         Global model: model reside in the server
-        Federated model: updated global model after it is boradcasted to clients
+        Federated model: local version of a global model (i.e., global model broadcasted to & updated at clients)
         Local model: model reside only in the client (may or may not be the same in structure of the global model)
-        Personalized model: (model interpolation method only) combinated model from federated and local model
+        Personalized model: (* model interpolation method only *) combinated model by mixing federated and local model
     """
     def __init__(self, args, writer, model, server_testset, client_datasets):
         # default attributes
@@ -106,13 +106,9 @@ class Server(object):
             federated_model_at_client.update(partial_model)
             self.clients[idx].model.load_state_dict(federated_model_at_client)
             
-        # transmit parameters of a federated model only
-        elif self.algorithm in ['ditto', 'apfl', 'pfedme', 'l2gd']:
-            pass
-        
         # transmit parameters of a federated model only (alpha = 0)
-        elif self.algorithm in ['superfed-mm', 'superfed-lm']:
-            global_model = {k: v for k, v in self.model.state_dict().items() if '_1' not in k}
+        elif self.algorithm in ['ditto', 'apfl', 'superfed-mm', 'superfed-lm']:
+            global_model = {k: v for k, v in self.model.state_dict().items() if '_local' not in k}
             federated_model_at_client = copy.deepcopy(self.clients[idx].model.state_dict())
             federated_model_at_client.update(global_model)
             self.clients[idx].model.load_state_dict(federated_model_at_client)
@@ -170,17 +166,13 @@ class Server(object):
                             aggregated_weights[key] += coefficients[it] * local_weights[key]
                     else:
                         aggregated_weights[key] = local_weights[key]
-                        
-        # aggregate parameters of a federated model only  
-        elif self.algorithm in ['ditto', 'apfl', 'pfedme', 'l2gd']:
-            pass
-        
+
         # aggregate parameters of a federated model only (alpha = 0)
-        elif self.algorithm in ['superfed-mm', 'superfed-lm']:
+        elif self.algorithm in ['ditto', 'apfl', 'superfed-mm', 'superfed-lm']:
             for it, idx in tqdm(enumerate(sampled_client_indices), leave=False):
                 local_weights = self.clients[idx].model.state_dict()
                 for key in self.model.state_dict().keys():
-                    if '_1' not in key:
+                    if '_local' not in key:
                         if it == 0:
                             aggregated_weights[key] = coefficients[it] * local_weights[key]
                         else:

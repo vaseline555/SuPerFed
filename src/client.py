@@ -74,8 +74,12 @@ class Client(object):
             self.model = basic_update(identifier=self.client_id, args=self.args, model=self.model, criterion=self.criterion, dataset=self.training_set, optimizer=self.optimizer, lr=current_lr, epochs=epochs)
         elif self.algorithm in ['fedrep']:
             self.model = fedrep_update(identifier=self.client_id, args=self.args, model=self.model, criterion=self.criterion, dataset=self.training_set, optimizer=self.optimizer, lr=current_lr, epochs=epochs)
-        elif self.algorithm in ['fedprox', 'apfl', 'ditto', 'pfedme', 'l2gd']:
+        elif self.algorithm in ['fedprox', 'pfedme', 'l2gd']:
             self.model = regularized_update(identifier=self.client_id, args=self.args, model=self.model, criterion=self.criterion, dataset=self.training_set, optimizer=self.optimizer, lr=current_lr, epochs=epochs)
+        elif self.algorithm in ['apfl']:
+            self.model = apfl_update(identifier=self.client_id, args=self.args, model=self.model, criterion=self.criterion, dataset=self.training_set, optimizer=self.optimizer, lr=current_lr, epochs=epochs)
+        elif self.algorithm in ['ditto']:
+            self.model = ditto_update(identifier=self.client_id, args=self.args, model=self.model, criterion=self.criterion, dataset=self.training_set, optimizer=self.optimizer, lr=current_lr, epochs=epochs)
         elif self.algorithm in ['superfed-mm', 'superfed-lm']:
             self.model = superfed_update(identifier=self.client_id, args=self.args, model=self.model, criterion=self.criterion, dataset=self.training_set, optimizer=self.optimizer, lr=current_lr, epochs=epochs)
         else:
@@ -84,5 +88,7 @@ class Client(object):
     def client_evaluate(self):
         if self.algorithm in ['fedavg', 'fedprox', 'lg-fedavg', 'fedper', 'fedrep']:
             return basic_evaluate(identifier=self.client_id, args=self.args, model=self.model, criterion=self.criterion, dataset=self.test_set)
-        else:
-            pass
+        elif self.algorithm in []:
+            return mixed_evaluate(identifier=self.client_id, args=self.args, model=self.model, criterion=self.criterion, dataset=self.test_set)
+        elif self.algorithm in []:
+            return 

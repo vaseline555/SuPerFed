@@ -27,11 +27,11 @@ class SubspaceConv(nn.Conv2d):
 class TwoParamConv(SubspaceConv):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.weight_1 = nn.Parameter(torch.zeros_like(self.weight))
+        self.weight_local = nn.Parameter(torch.zeros_like(self.weight))
 
 class LinesConv(TwoParamConv):
     def get_weight(self):
-        w = (1 - self.alpha) * self.weight + self.alpha * self.weight_1
+        w = (1 - self.alpha) * self.weight + self.alpha * self.weight_local
         return w
 
 # dense layer
@@ -45,11 +45,11 @@ class SubspaceLinear(nn.Linear):
 class TwoParamLinear(SubspaceLinear):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.weight_1 = nn.Parameter(torch.zeros_like(self.weight))
+        self.weight_local = nn.Parameter(torch.zeros_like(self.weight))
 
 class LinesLinear(TwoParamLinear):
     def get_weight(self):
-        w = (1 - self.alpha) * self.weight + self.alpha * self.weight_1
+        w = (1 - self.alpha) * self.weight + self.alpha * self.weight_local
         return w
 
 # LSTM layer
@@ -63,6 +63,7 @@ class SubspaceLSTM(nn.LSTM):
             if self.bias:
                 setattr(self.mixed_lstm, f'bias_hh_l{l}', nn.Parameter(weight_dict[f'bias_hh_l{l}_mixed']))
                 setattr(self.mixed_lstm, f'bias_ih_l{l}', nn.Parameter(weight_dict[f'bias_ih_l{l}_mixed']))
+        self.mixed_lstm.flatten_parameters()
         return self.mixed_lstm(x)
 
 class TwoParamLSTM(SubspaceLSTM):
@@ -70,21 +71,21 @@ class TwoParamLSTM(SubspaceLSTM):
         super().__init__(*args, **kwargs)
         self.mixed_lstm = nn.LSTM(input_size=self.input_size, hidden_size=self.hidden_size, num_layers=self.num_layers, batch_first=self.batch_first)
         for l in range(self.num_layers):
-            setattr(self, f'weight_hh_l{l}_1', nn.Parameter(torch.zeros_like(getattr(self, f'weight_hh_l{l}'))))
-            setattr(self, f'weight_ih_l{l}_1', nn.Parameter(torch.zeros_like(getattr(self, f'weight_ih_l{l}'))))
+            setattr(self, f'weight_hh_l{l}_local', nn.Parameter(torch.zeros_like(getattr(self, f'weight_hh_l{l}'))))
+            setattr(self, f'weight_ih_l{l}_local', nn.Parameter(torch.zeros_like(getattr(self, f'weight_ih_l{l}'))))
             if self.bias:
-                setattr(self, f'bias_hh_l{l}_1', nn.Parameter(torch.zeros_like(getattr(self, f'bias_hh_l{l}'))))
-                setattr(self, f'bias_ih_l{l}_1', nn.Parameter(torch.zeros_like(getattr(self, f'bias_ih_l{l}'))))
+                setattr(self, f'bias_hh_l{l}_local', nn.Parameter(torch.zeros_like(getattr(self, f'bias_hh_l{l}'))))
+                setattr(self, f'bias_ih_l{l}_local', nn.Parameter(torch.zeros_like(getattr(self, f'bias_ih_l{l}'))))
                 
 class LinesLSTM(TwoParamLSTM):
     def get_weight(self):
         weight_dict = dict()
         for l in range(self.num_layers):
-            weight_dict[f'weight_hh_l{l}_mixed'] = (1 - self.alpha) * getattr(self, f'weight_hh_l{l}') + self.alpha * getattr(self, f'weight_hh_l{l}_1') 
-            weight_dict[f'weight_ih_l{l}_mixed'] = (1 - self.alpha) * getattr(self, f'weight_ih_l{l}') + self.alpha * getattr(self, f'weight_ih_l{l}_1') 
+            weight_dict[f'weight_hh_l{l}_mixed'] = (1 - self.alpha) * getattr(self, f'weight_hh_l{l}') + self.alpha * getattr(self, f'weight_hh_l{l}_local') 
+            weight_dict[f'weight_ih_l{l}_mixed'] = (1 - self.alpha) * getattr(self, f'weight_ih_l{l}') + self.alpha * getattr(self, f'weight_ih_l{l}_local') 
             if self.bias:
-                weight_dict[f'bias_hh_l{l}_mixed'] = (1 - self.alpha) * getattr(self, f'bias_hh_l{l}') + self.alpha * getattr(self, f'bias_hh_l{l}_1') 
-                weight_dict[f'bias_ih_l{l}_mixed'] = (1 - self.alpha) * getattr(self, f'bias_ih_l{l}') + self.alpha * getattr(self, f'bias_ih_l{l}_1')
+                weight_dict[f'bias_hh_l{l}_mixed'] = (1 - self.alpha) * getattr(self, f'bias_hh_l{l}') + self.alpha * getattr(self, f'bias_hh_l{l}_local') 
+                weight_dict[f'bias_ih_l{l}_mixed'] = (1 - self.alpha) * getattr(self, f'bias_ih_l{l}') + self.alpha * getattr(self, f'bias_ih_l{l}_local')
         return weight_dict
 
 # Embedding layer
@@ -100,11 +101,11 @@ class SubspaceEmbedding(nn.Embedding):
 class TwoParamEmbedding(SubspaceEmbedding):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.weight_1 = nn.Parameter(torch.zeros_like(self.weight))
+        self.weight_local = nn.Parameter(torch.zeros_like(self.weight))
                 
 class LinesEmbedding(TwoParamEmbedding):
     def get_weight(self):
-        w = (1 - self.alpha) * self.weight + self.alpha * self.weight_1
+        w = (1 - self.alpha) * self.weight + self.alpha * self.weight_local
         return w
 
 # BatchNorm layer
@@ -150,13 +151,13 @@ class SubspaceBN(nn.BatchNorm2d):
 class TwoParamBN(SubspaceBN):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.weight_1 = nn.Parameter(torch.Tensor(self.num_features))
-        self.bias_1 = nn.Parameter(torch.Tensor(self.num_features))
-        torch.nn.init.ones_(self.weight1)
-        torch.nn.init.zeros_(self.bias1)
+        self.weight_local = nn.Parameter(torch.Tensor(self.num_features))
+        self.bias_local = nn.Parameter(torch.Tensor(self.num_features))
+        torch.nn.init.ones_(self.weight_local)
+        torch.nn.init.zeros_(self.bias_local)
         
 class LinesBN(TwoParamBN):
     def get_weight(self):
-        w = (1 - self.alpha) * self.weight + self.alpha * self.weight_1
-        b = (1 - self.alpha) * self.bias + self.alpha * self.bias_1
+        w = (1 - self.alpha) * self.weight + self.alpha * self.weight_local
+        b = (1 - self.alpha) * self.bias + self.alpha * self.bias_local
         return w, b

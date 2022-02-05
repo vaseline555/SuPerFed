@@ -53,8 +53,7 @@ def main(args, writer):
     else:
         block = None
     model = getattr(models, args.model_name)(builder, args, block)
-    model = initiate_model(model, args)
-    
+
     
     
     ##############
@@ -121,9 +120,9 @@ if __name__ == "__main__":
     # optimization related arguments
     parser.add_argument('--lr', help='learning rate of each client', type=float, default=0.01)
     parser.add_argument('--lr_decay', help='magnitude of learning rate decay at every round', type=float, default=0.99)
-    parser.add_argument('--mu',help='constant for proximity regularization term (for fedprox, superfed)', type=float, default=1.0)
-    parser.add_argument('--nu', help='constant for low-loss subspace construction term (for superfed)', type=float, default=1.0)
-    parser.add_argument('--tau', help='constant for fine tuning head for better local reprsentation learning (for fedrep)', type=int, default=5)
+    parser.add_argument('--mu',help='constant for proximity regularization term (for fedprox, ditto, pfedme, superfed)', type=float, default=0.01)
+    parser.add_argument('--tau', help='constant for fine tuning head or updating a local model (for fedrep, ditto, pfedme)', type=int, default=5)
+    parser.add_argument('--alpha', help='constant for mixing models (for apfl)', type=float, default=0.25)
     
     # model related arguments
     parser.add_argument('--model_name', help='model to use [TwoNN|TwoCNN|NextCharLM|ResNet18|MobileNetv2]', type=str, choices=['TwoNN', 'TwoCNN', 'NextCharLM', 'ResNet18', 'MobileNetv2'])
@@ -137,10 +136,6 @@ if __name__ == "__main__":
     
     # parse arguments
     args = parser.parse_args()
-
-    # check if arguments are specified correctly
-    if 'Lines' in args.fc_type:
-        assert len(args.init_seed) <= 2, '[ERROR] number of `init_seed` should be less than or equal to 2!'
         
     # make path for saving losses & metrics
     if not os.path.exists(os.path.join(args.result_path, args.exp_name)):
