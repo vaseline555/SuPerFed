@@ -306,9 +306,7 @@ class Server(object):
         if self.algorithm in ['fedavg', 'fedprox']:
             return basic_evaluate(None, self.args, self.model, self.criterion, self.server_testset)
         elif self.algorithm in ['superfed-mm', 'superfed-lm']:
-            results = superfed_evaluate(None, self.args, self.model, self.criterion, self.server_testset, self._round)
-            lowest_loss_idx = results[0].argmin()
-            return results[:, lowest_loss_idx].squeeze()
+            return basic_evaluate(None, self.args, self.model, self.criterion, self.server_testset)
         
     def fit(self):
         """Execute the whole process of the federated learning.

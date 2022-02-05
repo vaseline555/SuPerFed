@@ -44,6 +44,10 @@ def main(args, writer):
     #################
     # Prepare model #
     #################
+    # adjust `n_jobs`
+    if args.n_jobs == -1:
+        args.n_jobs = os.cpu_count() - 1
+        
     # check if correct model is specified
     builder = Builder(args)
     if 'ResNet' in args.model_name:

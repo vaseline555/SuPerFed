@@ -288,7 +288,7 @@ def apfl_update(identifier, args, model, criterion, dataset, optimizer, lr, epoc
 
     # prepare optimizer       
     local_optimizer = optimizer(
-        [parameter for name, parameter in personalized_model.named_parameters() if '_local' in name], 
+        filter(lambda parameter: parameter.requires_grad, personalized_model.parameters()), 
         lr=lr, 
         momentum=0.9
     )
@@ -309,7 +309,7 @@ def apfl_update(identifier, args, model, criterion, dataset, optimizer, lr, epoc
     
     # prepare optimizer       
     global_optimizer = optimizer(
-        [parameter for name, parameter in model.named_parameters() if '_local' not in name], 
+        filter(lambda parameter: parameter.requires_grad, model.parameters()), 
         lr=lr, 
         momentum=0.9
     )
@@ -407,7 +407,7 @@ def ditto_update(identifier, args, model, criterion, dataset, optimizer, lr, epo
     
     # prepare optimizer       
     global_optimizer = optimizer(
-        [parameter for name, parameter in model.named_parameters() if '_local' not in name], 
+        filter(lambda parameter: parameter.requires_grad, model.parameters()), 
         lr=lr, 
         momentum=0.9
     )
@@ -464,7 +464,7 @@ def ditto_update(identifier, args, model, criterion, dataset, optimizer, lr, epo
     
     # prepare optimizer       
     local_optimizer = optimizer(
-        [parameter for name, parameter in model.named_parameters() if '_local' in name], 
+        filter(lambda parameter: parameter.requires_grad, model.parameters()), 
         lr=lr, 
         momentum=0.9
     )
@@ -549,7 +549,7 @@ def pfedme_update(identifier, args, model, criterion, dataset, optimizer, lr, ep
     
     # prepare optimizer       
     optimizer = optimizer(
-        [parameter for name, parameter in model.named_parameters() if '_local' in name], 
+        filter(lambda parameter: parameter.requires_grad, model.parameters()), 
         lr=lr, 
         momentum=0.9
     )
@@ -730,7 +730,7 @@ def basic_evaluate(identifier, args, model, criterion, dataset):
     model.eval()
     model.to(args.device)
     
-    if args.algorithm in ['apfl', 'ditto', 'pfedme']:
+    if args.algorithm in ['apfl', 'ditto', 'pfedme', 'superfed-mm', 'superfed-lm']:
         # get the personalized or local model
         model.apply(partial(set_lambda, lam=args.apfl_constant if args.algorithm == 'apfl' else 1.0))
 
@@ -826,8 +826,6 @@ def superfed_evaluate(identifier, args, model, criterion, dataset, current_round
     lowest_loss_idx = results[0].argmin()
     losses, acc1, acc5, ece, mce = results[:, lowest_loss_idx].squeeze()
     
-    if identifier is not None:
-        print(f'\t[EVALUATION - CLIENT ({str(identifier).zfill(4)})] Loss: {losses:.4f}, Top1 Acc.: {acc1:.4f}, Top5 Acc.: {acc5:.4f}, ECE: {ece:.4f}, MCE: {mce:.4f}')
-    else:
-        print(f'\t[EVALUATION - SERVER] Loss: {losses:.4f}, Top1 Acc.: {acc1:.4f}, Top5 Acc.: {acc5:.4f}, ECE: {ece:.4f}, MCE: {mce:.4f}')
+
+    print(f'\t[EVALUATION - CLIENT ({str(identifier).zfill(4)})] Loss: {losses:.4f}, Top1 Acc.: {acc1:.4f}, Top5 Acc.: {acc5:.4f}, ECE: {ece:.4f}, MCE: {mce:.4f}')
     return results
