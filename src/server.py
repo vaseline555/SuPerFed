@@ -296,7 +296,6 @@ class Server(object):
         """Evaluate the global model at the server using the server-side holdout dataset.
         (Possible only if the algorithm supports an exchange of whole parameters)
         """
-        import pdb;pdb.set_trace()
         try:
             assert self.server_testset is not None, '[ERROR] Server should have global testset!'
             assert self.algorithm in ['fedavg', 'fedprox', 'ditto', 'apfl', 'pfedme', 'l2gd', 'superfed-mm', 'superfed-lm'], '[ERROR] Algorithm should support an exchange of whole model parameters!'
@@ -307,7 +306,7 @@ class Server(object):
         if self.algorithm in ['fedavg', 'fedprox']:
             return basic_evaluate(None, self.args, self.model, self.criterion, self.server_testset)
         elif self.algorithm in ['superfed-mm', 'superfed-lm']:
-            results = superfed_evaluate(None, self.args, self.model, self.criterion, self.server_testset)
+            results = superfed_evaluate(None, self.args, self.model, self.criterion, self.server_testset, self._round)
             lowest_loss_idx = results[0].argmin()
             return results[:, lowest_loss_idx].squeeze()
         
