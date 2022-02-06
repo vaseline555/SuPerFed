@@ -518,35 +518,36 @@ def pfedme_update(identifier, args, model, criterion, dataset, optimizer, lr, ep
     
     # update local model first
     for e in range(args.E if epochs is None else epochs):
-        # track loss and metrics
-        losses, acc1, acc5, ece, mce = 0, 0, 0, 0, 0
-        for inputs, targets in dataloader:
-            inputs, targets = inputs.to(args.device), targets.to(args.device)
+        for local_epoch in range(args.tau):
+            # track loss and metrics
+            losses, acc1, acc5, ece, mce = 0, 0, 0, 0, 0
+            for inputs, targets in dataloader:
+                inputs, targets = inputs.to(args.device), targets.to(args.device)
 
-            # inference
-            outputs = model(inputs)
-            loss = criterion()(outputs, targets)
-            
-            # calculate regularization term toward global model
-            prox = 0.
-            weights = model.state_dict()
-            for name in weights.keys():
-                if 'local' not in name:
-                    continue
-                prox += (weights[name[:-6]] - weights[name]).norm(2)
-            else:
-                del weights; gc.collect()
-            loss += args.mu * prox
-            
-            # update
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step() 
-            
-            # get loss
+                # inference
+                outputs = model(inputs)
+                loss = criterion()(outputs, targets)
+
+                # calculate regularization term toward global model
+                prox = 0.
+                weights = model.state_dict()
+                for name in weights.keys():
+                    if 'local' not in name:
+                        continue
+                    prox += (weights[name[:-6]] - weights[name]).norm(2)
+                else:
+                    del weights; gc.collect()
+                loss += args.mu * prox
+
+                # update
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step() 
+        else:
+            # get the final loss
             losses += loss.item()
             
-            # get accuracy
+            # get the final accuracy
             accs = get_accuracy(outputs, targets, (1, 5))
             acc1 += accs[0].item(); acc5 += accs[-1].item()
 
@@ -556,8 +557,8 @@ def pfedme_update(identifier, args, model, criterion, dataset, optimizer, lr, ep
 
             # clear cache
             if 'cuda' in args.device: torch.cuda.empty_cache()
-        else:
-            # update global model based on updated local model weights (line 8 of Algorihtm 1 in the paper)
+
+            # update global model based on the \delta-approximated local model weights (line 8 of Algorihtm 1 in the paper)
             weights = model.state_dict()
             for name in weights.keys():
                 if 'local' not in name:

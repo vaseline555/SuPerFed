@@ -9,6 +9,38 @@ python3 main.py --exp_name _femnist --tb_port  \
 --split_type realistic \
 --eval_every 200
 
+# FedAvg
+python3 main.py --exp_name fedavg_femnist --tb_port 11 \
+--dataset FEMNIST --is_small --in_channels 1 --num_classes 62 \
+--algorithm fedavg --model_name ResNet18 \
+--C 0.007 --R 200 --E 5 --B 10 \
+--split_type realistic \
+--eval_every 200
+
+# FedProx
+python3 main.py --exp_name fedprox_femnist --tb_port 12 \
+--dataset FEMNIST --is_small --in_channels 1 --num_classes 62 \
+--algorithm fedprox --model_name ResNet18 \
+--C 0.007 --R 200 --E 5 --B 10 \
+--split_type realistic \
+--eval_every 200
+
+# LG-FedAvg
+python3 main.py --exp_name lg-fedavg_femnist --tb_port 13 \
+--dataset FEMNIST --is_small --in_channels 1 --num_classes 62 \
+--algorithm lg-fedavg --model_name ResNet18 \
+--C 0.007 --R 200 --E 5 --B 10 \
+--split_type realistic \
+--eval_every 200
+
+# FedPer
+python3 main.py --exp_name fedper_femnist --tb_port  \
+--dataset FEMNIST --is_small --in_channels 1 --num_classes 62 \
+--algorithm fedper --model_name ResNet18 \
+--C 0.007 --R 200 --E 5 --B 10 \
+--split_type realistic \
+--eval_every 200
+
 # SuPerFed-MM
 python3 main.py --exp_name superfed-mm_femnist --tb_port 6666 \
 --dataset FEMNIST --is_small --in_channels 1 --num_classes 62 \

@@ -232,7 +232,7 @@ class Server(object):
         ## record results
         if self.algorithm in ['superfed-mm', 'superfed-lm']:
             results_all = torch.stack([torch.stack(tensor) for tensor in results]) # args.K x 5 x 21
-            self.results, per_loss, per_acc1, per_acc5, per_ece, per_mce = record_results(self.args, self.writer, self.results, 'selected', self._round, *results_all.mean(0).mean(1))
+            self.results, per_loss, per_acc1, per_acc5, per_ece, per_mce = record_results(self.args, self.writer, self.results, 'selected', self._round, *results_all.mean(-1))
         else:
             self.results, per_loss, per_acc1, per_acc5, per_ece, per_mce = record_results(self.args, self.writer, self.results, 'selected', self._round, *torch.tensor(results).T)
    
@@ -258,7 +258,7 @@ class Server(object):
         ## record results
         if self.algorithm in ['superfed-mm', 'superfed-lm']:
             results_all = torch.stack([torch.stack(tensor) for tensor in results]) # args.K x 5 x 21
-            self.results, base_loss, base_acc1, base_acc5, base_ece, base_mce = record_results(self.args, self.writer, self.results, 'baseline_all', self._round, *results_all.mean(0).mean(1))
+            self.results, base_loss, base_acc1, base_acc5, base_ece, base_mce = record_results(self.args, self.writer, self.results, 'baseline_all', self._round, *results_all.mean(-1))
         else:
             self.results, base_loss, base_acc1, base_acc5, base_ece, base_mce = record_results(self.args, self.writer, self.results, 'baseline_all', self._round // self.args.eval_every, *torch.tensor(results).T)
 

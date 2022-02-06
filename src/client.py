@@ -65,6 +65,8 @@ class Client(object):
     def initialize_model(self):
         if self.args.algorithm in ['superfed-mm', 'superfed-lm']:
             self.model = init_weights(self.model, self.args.init_type, self.args.init_gain, [self.args.global_seed, 5252])
+        elif self.args.algorithm in ['apfl', 'pfedme', 'ditto']:
+            self.model = init_weights(self.model, self.args.init_type, self.args.init_gain, [self.args.global_seed, self.args.global_seed])
         else:
             self.model = init_weights(self.model, self.args.init_type, self.args.init_gain, [self.args.global_seed])
 
