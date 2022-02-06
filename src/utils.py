@@ -178,7 +178,8 @@ class LEAFParser:
             tr_dset.num_samples = merged_train['num_samples'][idx]; te_dset.num_samples = merged_test['num_samples'][idx]
             tr_dset._make_dataset(); te_dset._make_dataset()
             return (tr_dset, te_dset)
-        datasets = Parallel(n_jobs=self.n_jobs, prefer='threads')(delayed(construct_leaf)(idx, user) for idx, user in tqdm(enumerate(merged_train['users']), desc=f'[INFO] ...create datasets [LEAF - {self.dataset_name.upper()}]!'))
+        with Parallel(n_jobs=self.n_jobs, prefer='threads') as parallel:
+            datasets = parallel(delayed(construct_leaf)(idx, user) for idx, user in tqdm(enumerate(merged_train['users']), desc=f'[INFO] ...create datasets [LEAF - {self.dataset_name.upper()}]!'))
         split_map = dict(zip([i for i in range(len(merged_train['user_data']))], list(map(sum, zip(merged_train['num_samples'], merged_test['num_samples'])))))
         return split_map, datasets
     
@@ -244,7 +245,8 @@ def get_dataset(args):
         split_map = split_data(args, raw_train)
 
         # construct client datasets
-        client_datasets = Parallel(n_jobs=args.n_jobs, prefer='threads')(delayed(construct_dataset)(indices) for _, indices in tqdm(split_map.items(), desc=f'[INFO] ...create datasets [{args.dataset}]!'))
+        with Parallel(n_jobs=args.n_jobs, prefer='threads') as parallel:
+            client_datasets = parallel(delayed(construct_dataset)(indices) for _, indices in tqdm(split_map.items(), desc=f'[INFO] ...create datasets [{args.dataset}]!'))
         return split_map, raw_test, client_datasets
     
     elif args.dataset == 'TinyImageNet':
@@ -274,7 +276,8 @@ def get_dataset(args):
         split_map = split_data(args, raw_train)
         
         # construct client datasets
-        client_datasets = Parallel(n_jobs=args.n_jobs, prefer='threads')(delayed(construct_dataset)(indices) for _, indices in tqdm(split_map.items(), desc=f'[INFO] ...create datasets [{args.dataset}]!'))
+        with Parallel(n_jobs=args.n_jobs, prefer='threads') as parallel:
+            client_datasets = parallel(delayed(construct_dataset)(indices) for _, indices in tqdm(split_map.items(), desc=f'[INFO] ...create datasets [{args.dataset}]!'))
         return split_map, raw_test, client_datasets
     
     elif args.dataset in ['FEMNIST', 'Shakespeare']:
@@ -369,18 +372,18 @@ def initiate_model(model, args):
     
     Returns:
         model: (nn.Module) initiated instance
-    """    
+    """
+    cuda_string = 'cuda' if args.device_ids == [] else f'cuda:{args.device_ids[0]}'
+    device = cuda_string if torch.cuda.is_available() else 'cpu'
+    
     # GPU setting
-    if 'cuda' in args.device:
-        if torch.cuda.device_count() > 1:
-            model_instance = torch.nn.DataParallel(model, device_ids=[i for i in range(torch.cuda.device_count())])
+    if ('cuda' in device) and (torch.cuda.device_count() > 1):
+        if args.device_ids == []:
+            model = torch.nn.DataParallel(model, device_ids=[i for i in range(torch.cuda.device_count())])
         else:
-            model_instance = model
-    # CPU setting
-    else:
-        model_instance = model
-    model_instance = model_instance.to(args.device)
-    return model_instance
+            model = torch.nn.DataParallel(model, device_ids=args.device_ids)
+    model.to(device)
+
 
 
 #######################
@@ -593,11 +596,11 @@ def plot_by_lambda(args, step, results):
     # make figure
     fig, ax = plt.subplots(nrows=1, ncols=5, figsize=(15, 3))
     plt.xticks(np.arange(0.0, 1.1, 0.1))
-    ax[0].errorbar(torch.arange(0.0, 1.1, 0.1), mean[0], yerr=std[0], color='c'); ax[0].set_title('Loss'); ax[0].set_xlabel(r'$\alpha$')
-    ax[1].errorbar(torch.arange(0.0, 1.1, 0.1), mean[1], yerr=std[1], color='m'); ax[1].set_title('Top 1 Accuracy'); ax[0].set_xlabel(r'$\alpha$')
-    ax[2].errorbar(torch.arange(0.0, 1.1, 0.1), mean[2], yerr=std[2], color='y'); ax[2].set_title('Top 5 Accuracy'); ax[0].set_xlabel(r'$\alpha$')
-    ax[3].errorbar(torch.arange(0.0, 1.1, 0.1), mean[3], yerr=std[3], color='b'); ax[3].set_title('Exepcted Calibration Error'); ax[0].set_xlabel(r'$\alpha$')
-    ax[4].errorbar(torch.arange(0.0, 1.1, 0.1), mean[4], yerr=std[4], color='k'); ax[4].set_title('Maximum Calibration Error'); ax[0].set_xlabel(r'$\alpha$')
+    ax[0].errorbar(torch.arange(0.0, 1.1, 0.1), mean[0], yerr=std[0], color='c'); ax[0].set_title('Loss'); ax[0].set_xlabel(r'$\lambda$')
+    ax[1].errorbar(torch.arange(0.0, 1.1, 0.1), mean[1], yerr=std[1], color='m'); ax[1].set_title('Top 1 Accuracy'); ax[0].set_xlabel(r'$\lambda$')
+    ax[2].errorbar(torch.arange(0.0, 1.1, 0.1), mean[2], yerr=std[2], color='y'); ax[2].set_title('Top 5 Accuracy'); ax[0].set_xlabel(r'$\lambda$')
+    ax[3].errorbar(torch.arange(0.0, 1.1, 0.1), mean[3], yerr=std[3], color='b'); ax[3].set_title('Exepcted Calibration Error'); ax[0].set_xlabel(r'$\lambda$')
+    ax[4].errorbar(torch.arange(0.0, 1.1, 0.1), mean[4], yerr=std[4], color='k'); ax[4].set_title('Maximum Calibration Error'); ax[0].set_xlabel(r'$\lambda$')
     plt.tight_layout()
 
     # save

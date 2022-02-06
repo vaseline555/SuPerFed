@@ -47,7 +47,11 @@ def main(args, writer):
     # adjust `n_jobs`
     if args.n_jobs == -1:
         args.n_jobs = os.cpu_count() - 1
-        
+    
+    # adjust device
+    cuda_string = 'cuda' if args.device_ids == [] else f'cuda:{args.device_ids[0]}'
+    args.device = cuda_string if torch.cuda.is_available() else 'cpu'
+    
     # check if correct model is specified
     builder = Builder(args)
     if 'ResNet' in args.model_name:
@@ -57,7 +61,6 @@ def main(args, writer):
     else:
         block = None
     model = getattr(models, args.model_name)(builder, args, block)
-    model.to('cpu')
 
     
     
@@ -88,6 +91,7 @@ if __name__ == "__main__":
     parser.add_argument('--exp_name', help='experiment name', type=str, required=True)
     parser.add_argument('--global_seed', help='global random seed (applied EXCEPT model initiailization)', type=int, default=5959)
     parser.add_argument('--device', help='device to use, either cpu or cuda; default is cpu', type=str, default='cuda', choices=['cpu', 'cuda'])
+    parser.add_argument('--device_ids',  nargs='+', type=int, help='GPU device ids for multi-GPU training (use all GPUs if no number is passed)', default=[])
     parser.add_argument('--data_path', help='data path', type=str, default='./data')
     parser.add_argument('--log_path', help='log path', type=str, default='./log')
     parser.add_argument('--result_path', help='result path', type=str, default='./result')
@@ -120,7 +124,7 @@ if __name__ == "__main__":
     parser.add_argument('--R', help='number of total federated learning rounds', type=int, default=1000)
     parser.add_argument('--E', help='number of local epochs', type=int, default=10)
     parser.add_argument('--B', help='batch size for local update in each client', type=int, default=10)
-    parser.add_argument('--L', help='when to start local training round (start local model training from `floor(L * R)` round)', type=float, default=0.8)
+    parser.add_argument('--L', help='when to start local training round (start local model training from `floor(L * R)` round)', type=float, default=0.4)
     parser.add_argument('--eval_every', help='evaluate at every `eval_every` round', type=int, default=100)
     
     # optimization related arguments

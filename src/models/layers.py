@@ -61,19 +61,19 @@ class SubspaceLSTM(nn.LSTM):
     def forward(self, x):
         # call get_weight, which samples from the subspace, then use the corresponding weight.
         weight_dict = self.get_weight()
+        mixed_lstm = nn.LSTM(input_size=self.input_size, hidden_size=self.hidden_size, num_layers=self.num_layers, batch_first=self.batch_first)
         for l in range(self.num_layers):
-            setattr(self.mixed_lstm, f'weight_hh_l{l}', nn.Parameter(weight_dict[f'weight_hh_l{l}_mixed']))
-            setattr(self.mixed_lstm, f'weight_ih_l{l}', nn.Parameter(weight_dict[f'weight_ih_l{l}_mixed']))
+            setattr(mixed_lstm, f'weight_hh_l{l}', nn.Parameter(weight_dict[f'weight_hh_l{l}_mixed']))
+            setattr(mixed_lstm, f'weight_ih_l{l}', nn.Parameter(weight_dict[f'weight_ih_l{l}_mixed']))
             if self.bias:
-                setattr(self.mixed_lstm, f'bias_hh_l{l}', nn.Parameter(weight_dict[f'bias_hh_l{l}_mixed']))
-                setattr(self.mixed_lstm, f'bias_ih_l{l}', nn.Parameter(weight_dict[f'bias_ih_l{l}_mixed']))
-        self.mixed_lstm.flatten_parameters()
-        return self.mixed_lstm(x)
+                setattr(mixed_lstm, f'bias_hh_l{l}', nn.Parameter(weight_dict[f'bias_hh_l{l}_mixed']))
+                setattr(mixed_lstm, f'bias_ih_l{l}', nn.Parameter(weight_dict[f'bias_ih_l{l}_mixed']))
+        mixed_lstm.flatten_parameters()
+        return mixed_lstm(x)
 
 class TwoParamLSTM(SubspaceLSTM):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.mixed_lstm = nn.LSTM(input_size=self.input_size, hidden_size=self.hidden_size, num_layers=self.num_layers, batch_first=self.batch_first)
         for l in range(self.num_layers):
             setattr(self, f'weight_hh_l{l}_local', nn.Parameter(torch.zeros_like(getattr(self, f'weight_hh_l{l}'))))
             setattr(self, f'weight_ih_l{l}_local', nn.Parameter(torch.zeros_like(getattr(self, f'weight_ih_l{l}'))))

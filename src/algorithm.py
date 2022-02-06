@@ -17,10 +17,10 @@ from .utils import initiate_model, get_accuracy, CalibrationError, set_lambda
 def basic_update(identifier, args, model, criterion, dataset, optimizer, lr, epochs):
     # prepare model
     model.train()
-    model = initiate_model(model, args)
+    initiate_model(model, args)
     
     # make dataloader
-    dataloader = torch.utils.data.DataLoader(dataset, batch_size=args.B, shuffle=True, pin_memory=True)
+    dataloader = torch.utils.data.DataLoader(dataset, batch_size=args.B, shuffle=True)
 
     # prepare optimizer       
     optimizer = optimizer(model.parameters(), lr=lr, momentum=0.9)
@@ -53,7 +53,7 @@ def basic_update(identifier, args, model, criterion, dataset, optimizer, lr, epo
             ece += ces[0].item(); mce += ces[-1].item()
 
             # clear cache
-            if args.device == 'cuda': torch.cuda.empty_cache()
+            if 'cuda' in args.device: torch.cuda.empty_cache(); gc.collect()
         else:
             # get losses & metrics
             losses /= len(dataloader)
@@ -63,31 +63,25 @@ def basic_update(identifier, args, model, criterion, dataset, optimizer, lr, epo
             mce /= len(dataloader)
             print(f'\t[TRAINING - CLIENT ({str(identifier).zfill(4)})] [EPOCH: {str(e).zfill(2)}] Loss: {losses:.4f}, Top1 Acc.: {acc1:.4f}, Top5 Acc.: {acc5:.4f}, ECE: {ece:.4f}, MCE: {mce:.4f}')
     else:
-        if (args.device == 'cuda') and (torch.cuda.device_count() > 1):
-            model = model.module.to('cpu')
-        else:
-            model = model.to('cpu')
-    return model
+        model.to('cpu')
 
 
 
 # FedProx
 def fedprox_update(identifier, args, model, criterion, dataset, optimizer, lr, epochs):
     # set local model
-    local_model = copy.deepcopy(model)
-    local_model.train()
-    local_model = initiate_model(local_model, args)
+    model.train()
+    initiate_model(model, args)
     
     # set global model for a regularization
-    previous_optimal_model = copy.deepcopy(model)
-    for parameter in previous_optimal_model.parameters(): parameter.requires_grad = False
-    del model; gc.collect()
+    previous_global_model = copy.deepcopy(model)
+    for parameter in previous_global_model.parameters(): parameter.requires_grad = False
 
     # make dataloader
-    dataloader = torch.utils.data.DataLoader(dataset, batch_size=args.B, shuffle=True, pin_memory=True)
+    dataloader = torch.utils.data.DataLoader(dataset, batch_size=args.B, shuffle=True)
 
     # prepare optimizer       
-    optimizer = optimizer(local_model.parameters(), lr=lr, momentum=0.9)
+    optimizer = optimizer(model.parameters(), lr=lr, momentum=0.9)
     
     # main loop
     for e in range(args.E if epochs is None else epochs):
@@ -97,12 +91,12 @@ def fedprox_update(identifier, args, model, criterion, dataset, optimizer, lr, e
             inputs, targets = inputs.to(args.device), targets.to(args.device)
 
             # inference
-            outputs = local_model(inputs)
+            outputs = model(inputs)
             loss = criterion()(outputs, targets)
             
             # calculate proximity regularization
             prox = 0.
-            for p_local, p_global in zip(local_model.parameters(), previous_optimal_model.parameters()): 
+            for p_local, p_global in zip(model.parameters(), previous_global_model.parameters()): 
                 prox += (p_local - p_global.to(args.device)).norm(2)
             loss += args.mu * prox
             
@@ -123,7 +117,7 @@ def fedprox_update(identifier, args, model, criterion, dataset, optimizer, lr, e
             ece += ces[0].item(); mce += ces[-1].item()
 
             # clear cache
-            if args.device == 'cuda': torch.cuda.empty_cache()
+            if 'cuda' in args.device: torch.cuda.empty_cache()
         else:
             # get losses & metrics
             losses /= len(dataloader)
@@ -133,12 +127,7 @@ def fedprox_update(identifier, args, model, criterion, dataset, optimizer, lr, e
             mce /= len(dataloader)
             print(f'\t[TRAINING - CLIENT ({str(identifier).zfill(4)})] [EPOCH: {str(e).zfill(2)}] Loss: {losses:.4f}, Top1 Acc.: {acc1:.4f}, Top5 Acc.: {acc5:.4f}, ECE: {ece:.4f}, MCE: {mce:.4f}')
     else:
-        del previous_optimal_model; gc.collect()
-        if (args.device == 'cuda') and (torch.cuda.device_count() > 1):
-            model = local_model.module.to('cpu')
-        else:
-            model = local_model.to('cpu')
-    return local_model
+        model.to('cpu')
 
 
 
@@ -148,10 +137,10 @@ def fedrep_update(identifier, args, model, criterion, dataset, optimizer, lr, ep
     
     # prepare model
     model.train()
-    model = initiate_model(model, args)
+    initiate_model(model, args)
     
     # make dataloader
-    dataloader = torch.utils.data.DataLoader(dataset, batch_size=args.B, shuffle=True, pin_memory=True)
+    dataloader = torch.utils.data.DataLoader(dataset, batch_size=args.B, shuffle=True)
 
     # update head (penultimate layer) first
     for name, parameter in model.named_parameters():
@@ -195,7 +184,7 @@ def fedrep_update(identifier, args, model, criterion, dataset, optimizer, lr, ep
             ece += ces[0].item(); mce += ces[-1].item()
 
             # clear cache
-            if args.device == 'cuda': torch.cuda.empty_cache()
+            if 'cuda' in args.device: torch.cuda.empty_cache()
         else:
             # get losses & metrics
             losses /= len(dataloader)
@@ -249,7 +238,7 @@ def fedrep_update(identifier, args, model, criterion, dataset, optimizer, lr, ep
             ece += ces[0].item(); mce += ces[-1].item()
 
             # clear cache
-            if args.device == 'cuda': torch.cuda.empty_cache()
+            if 'cuda' in args.device: torch.cuda.empty_cache()
         else:
             # get losses & metrics
             losses /= len(dataloader)
@@ -259,13 +248,7 @@ def fedrep_update(identifier, args, model, criterion, dataset, optimizer, lr, ep
             mce /= len(dataloader)
             print(f'\t[TRAINING - CLIENT ({str(identifier).zfill(4)})] [BODY EPOCH: {str(e).zfill(2)}] Loss: {losses:.4f}, Top1 Acc.: {acc1:.4f}, Top5 Acc.: {acc5:.4f}, ECE: {ece:.4f}, MCE: {mce:.4f}')
     else:
-        del body_optimizer; gc.collect()
-        
-        if (args.device == 'cuda') and (torch.cuda.device_count() > 1):
-            model = model.module.to('cpu')
-        else:
-            model = model.to('cpu')
-    return model
+        model.to('cpu')
 
 
 
@@ -277,18 +260,18 @@ def apfl_update(identifier, args, model, criterion, dataset, optimizer, lr, epoc
     
     # prepare model
     personalized_model.train()
-    personalized_model = initiate_model(personalized_model, args)
+    personalized_model.to(args.device)
     
     # update local model only
     for name, parameter in personalized_model.named_parameters():
-        if '_local' in name:
+        if 'local' in name:
             parameter.requires_grad = True
         else:
             parameter.requires_grad = False
 
     # prepare optimizer       
     local_optimizer = optimizer(
-        [parameter for name, parameter in personalized_model.named_parameters() if '_local' in name], 
+        [parameter for name, parameter in personalized_model.named_parameters() if 'local' in name], 
         lr=lr, 
         momentum=0.9
     )
@@ -298,24 +281,24 @@ def apfl_update(identifier, args, model, criterion, dataset, optimizer, lr, epoc
 
     # prepare model
     model.train()
-    model = initiate_model(model, args)
+    initiate_model(model, args)
     
     # update global model only
     for name, parameter in model.named_parameters():
-        if '_local' in name:
+        if 'local' in name:
             parameter.requires_grad = False
         else:
             parameter.requires_grad = True
     
     # prepare optimizer       
     global_optimizer = optimizer(
-        [parameter for name, parameter in model.named_parameters() if '_local' not in name], 
+        [parameter for name, parameter in model.named_parameters() if 'local' not in name], 
         lr=lr, 
         momentum=0.9
     )
     
     # make dataloader
-    dataloader = torch.utils.data.DataLoader(dataset, batch_size=args.B, shuffle=True, pin_memory=True)
+    dataloader = torch.utils.data.DataLoader(dataset, batch_size=args.B, shuffle=True)
     
     # update global model & personalized model
     for e in range(args.E if epochs is None else epochs):
@@ -339,7 +322,7 @@ def apfl_update(identifier, args, model, criterion, dataset, optimizer, lr, epoc
             # temporarliy merge into personalized model for metrics
             with torch.no_grad():
                 temp_model = copy.deepcopy(model)
-                local_updated = {k: v for k, v in personalized_model.state_dict().items() if '_local' in k}
+                local_updated = {k: v for k, v in personalized_model.state_dict().items() if 'local' in k}
                 global_updated = model.state_dict()
                 global_updated.update(local_updated)
                 temp_model.load_state_dict(global_updated)
@@ -357,7 +340,7 @@ def apfl_update(identifier, args, model, criterion, dataset, optimizer, lr, epoc
             ece += ces[0].item(); mce += ces[-1].item()
 
             # clear cache
-            if args.device == 'cuda': torch.cuda.empty_cache()
+            if 'cuda' in args.device: torch.cuda.empty_cache()
         else:
             # get losses & metrics
             losses /= len(dataloader)
@@ -370,17 +353,13 @@ def apfl_update(identifier, args, model, criterion, dataset, optimizer, lr, epoc
         del global_optimizer, local_optimizer; gc.collect()
         
         # merge updated local model with updated global model 
-        local_updated = {k: v for k, v in personalized_model.state_dict().items() if '_local' in k}
+        local_updated = {k: v for k, v in personalized_model.state_dict().items() if 'local' in k}
         global_updated = model.state_dict()
         global_updated.update(local_updated)
         model.load_state_dict(global_updated)
         del personalized_model, local_updated, global_updated; gc.collect()
         
-        if (args.device == 'cuda') and (torch.cuda.device_count() > 1):
-            model = model.module.to('cpu')
-        else:
-            model = model.to('cpu')
-    return model
+        model = model.to('cpu')
 
 
 
@@ -390,17 +369,17 @@ def ditto_update(identifier, args, model, criterion, dataset, optimizer, lr, epo
     
     # prepare model
     model.train()
-    model = initiate_model(model, args)
+    initiate_model(model, args)
     
     # make dataloader
-    dataloader = torch.utils.data.DataLoader(dataset, batch_size=args.B, shuffle=True, pin_memory=True)
+    dataloader = torch.utils.data.DataLoader(dataset, batch_size=args.B, shuffle=True)
     
     # get the global model first
     model.apply(partial(set_lambda, lam=0.0))
     
     # update global model only
     for name, parameter in model.named_parameters():
-        if '_local' in name:
+        if 'local' in name:
             parameter.requires_grad = False
         else:
             parameter.requires_grad = True
@@ -436,7 +415,7 @@ def ditto_update(identifier, args, model, criterion, dataset, optimizer, lr, epo
             ece += ces[0].item(); mce += ces[-1].item()
 
             # clear cache
-            if args.device == 'cuda': torch.cuda.empty_cache()
+            if 'cuda' in args.device: torch.cuda.empty_cache()
         else:
             # get losses & metrics
             losses /= len(dataloader)
@@ -453,7 +432,7 @@ def ditto_update(identifier, args, model, criterion, dataset, optimizer, lr, epo
     
     # update local model only
     for name, parameter in model.named_parameters():
-        if '_local' in name:
+        if 'local' in name:
             parameter.requires_grad = True
         else:
             parameter.requires_grad = False
@@ -476,7 +455,7 @@ def ditto_update(identifier, args, model, criterion, dataset, optimizer, lr, epo
             prox = 0.
             weights = model.state_dict()
             for name in weights.keys():
-                if '_local' not in name:
+                if 'local' not in name:
                     continue
                 prox += (weights[name[:-6]] - weights[name]).norm(2)
             else:
@@ -500,7 +479,7 @@ def ditto_update(identifier, args, model, criterion, dataset, optimizer, lr, epo
             ece += ces[0].item(); mce += ces[-1].item()
 
             # clear cache
-            if args.device == 'cuda': torch.cuda.empty_cache()
+            if 'cuda' in args.device: torch.cuda.empty_cache()
         else:
             # get losses & metrics
             losses /= len(dataloader)
@@ -511,12 +490,7 @@ def ditto_update(identifier, args, model, criterion, dataset, optimizer, lr, epo
             print(f'\t[TRAINING - CLIENT ({str(identifier).zfill(4)})] [LOCAL MODEL EPOCH: {str(e).zfill(2)}] Loss: {losses:.4f}, Top1 Acc.: {acc1:.4f}, Top5 Acc.: {acc5:.4f}, ECE: {ece:.4f}, MCE: {mce:.4f}')
     else:
         del local_optimizer; gc.collect()
-        
-        if (args.device == 'cuda') and (torch.cuda.device_count() > 1):
-            model = model.module.to('cpu')
-        else:
-            model = model.to('cpu')
-    return model
+        model.to('cpu')
 
 
 
@@ -524,17 +498,17 @@ def ditto_update(identifier, args, model, criterion, dataset, optimizer, lr, epo
 def pfedme_update(identifier, args, model, criterion, dataset, optimizer, lr, epochs):
     # prepare model
     model.train()
-    model = initiate_model(model, args)
+    initiate_model(model, args)
     
     # make dataloader
-    dataloader = torch.utils.data.DataLoader(dataset, batch_size=args.B, shuffle=True, pin_memory=True)
+    dataloader = torch.utils.data.DataLoader(dataset, batch_size=args.B, shuffle=True)
     
     # get the local model first
     model.apply(partial(set_lambda, lam=1.0))
 
     # update global model only
     for name, parameter in model.named_parameters():
-        if '_local' in name:
+        if 'local' in name:
             parameter.requires_grad = True
         else:
             parameter.requires_grad = False
@@ -557,7 +531,7 @@ def pfedme_update(identifier, args, model, criterion, dataset, optimizer, lr, ep
             prox = 0.
             weights = model.state_dict()
             for name in weights.keys():
-                if '_local' not in name:
+                if 'local' not in name:
                     continue
                 prox += (weights[name[:-6]] - weights[name]).norm(2)
             else:
@@ -581,12 +555,12 @@ def pfedme_update(identifier, args, model, criterion, dataset, optimizer, lr, ep
             ece += ces[0].item(); mce += ces[-1].item()
 
             # clear cache
-            if args.device == 'cuda': torch.cuda.empty_cache()
+            if 'cuda' in args.device: torch.cuda.empty_cache()
         else:
             # update global model based on updated local model weights (line 8 of Algorihtm 1 in the paper)
             weights = model.state_dict()
             for name in weights.keys():
-                if '_local' not in name:
+                if 'local' not in name:
                     continue
                 weights[name[:-6]] -= lr * args.mu * (weights[name[:-6]] - weights[name])
             else:
@@ -601,11 +575,7 @@ def pfedme_update(identifier, args, model, criterion, dataset, optimizer, lr, ep
             mce /= len(dataloader)
             print(f'\t[TRAINING - CLIENT ({str(identifier).zfill(4)})] [EPOCH: {str(e).zfill(2)}] Loss: {losses:.4f}, Top1 Acc.: {acc1:.4f}, Top5 Acc.: {acc5:.4f}, ECE: {ece:.4f}, MCE: {mce:.4f}')
     else:
-        if (args.device == 'cuda') and (torch.cuda.device_count() > 1):
-            model = model.module.to('cpu')
-        else:
-            model = model.to('cpu')
-    return model
+        model = model.to('cpu')
 
     
     
@@ -617,15 +587,15 @@ def superfed_update(identifier, args, model, criterion, dataset, optimizer, lr, 
     
     # set global model for a regularization
     if args.mu > 0:
-        previous_optimal_model = copy.deepcopy(model)
-        for parameter in previous_optimal_model.parameters(): parameter.requires_grad = False
+        previous_global_model = copy.deepcopy(model)
+        for parameter in previous_global_model.parameters(): parameter.requires_grad = False
     
     # prepare model
     model.train()
-    model = initiate_model(model, args)
+    initiate_model(model, args)
     
     # make dataloader
-    dataloader = torch.utils.data.DataLoader(dataset, batch_size=args.B, shuffle=True, pin_memory=True)
+    dataloader = torch.utils.data.DataLoader(dataset, batch_size=args.B, shuffle=True)
 
     # prepare optimizer       
     optimizer = optimizer(model.parameters(), lr=lr, momentum=0.9)
@@ -655,7 +625,7 @@ def superfed_update(identifier, args, model, criterion, dataset, optimizer, lr, 
             # calculate proximity regularization term toward global model
             if args.mu > 0:
                 prox = 0.
-                for p_local, p_global in zip(model.parameters(), previous_optimal_model.parameters()): 
+                for p_local, p_global in zip(model.parameters(), previous_global_model.parameters()): 
                     prox += (p_local - p_global.to(args.device)).norm(2)
                 loss += args.mu * prox
                 
@@ -664,7 +634,7 @@ def superfed_update(identifier, args, model, criterion, dataset, optimizer, lr, 
                 weights = model.state_dict()
                 numerator, norm_1, norm_2 = 0, 0, 0
                 for name in weights.keys():
-                    if '_local' not in name:
+                    if 'local' not in name:
                         continue
                     numerator += (weights[name[:-6]] * weights[name]).sum()
                     norm_1 += weights[name[:-6]].pow(2).sum()
@@ -691,7 +661,7 @@ def superfed_update(identifier, args, model, criterion, dataset, optimizer, lr, 
             ece += ces[0].item(); mce += ces[-1].item()
 
             # clear cache
-            if args.device == 'cuda': torch.cuda.empty_cache()
+            if 'cuda' in args.device: torch.cuda.empty_cache()
         else:            
             # get losses & metrics
             losses /= len(dataloader)
@@ -701,12 +671,7 @@ def superfed_update(identifier, args, model, criterion, dataset, optimizer, lr, 
             mce /= len(dataloader)
             print(f'\t[TRAINING - CLIENT ({str(identifier).zfill(4)})] [EPOCH: {str(e).zfill(2)}] Loss: {losses:.4f}, Top1 Acc.: {acc1:.4f}, Top5 Acc.: {acc5:.4f}, ECE: {ece:.4f}, MCE: {mce:.4f}')
     else:
-        if (args.device == 'cuda') and (torch.cuda.device_count() > 1):
-            model = model.module.to('cpu')
-        else:
-            model = model.to('cpu')
-    return model
-
+        model = model.to('cpu')
 
     
 ###################
@@ -716,14 +681,21 @@ def superfed_update(identifier, args, model, criterion, dataset, optimizer, lr, 
 def basic_evaluate(identifier, args, model, criterion, dataset):
     # prepare model
     model.eval()
-    model.to(args.device)
+    initiate_model(model, args)
     
-    if args.algorithm in ['apfl', 'ditto', 'pfedme', 'superfed-mm', 'superfed-lm']:
-        # get the personalized or local model
-        model.apply(partial(set_lambda, lam=args.apfl_constant if args.algorithm == 'apfl' else 1.0))
+    if args.algorithm in ['apfl', 'ditto', 'pfedme']:
+        if identifier is not None: # personalized model evaluation
+            model.apply(partial(set_lambda, lam=args.apfl_constant if args.algorithm == 'apfl' else 1.0))
+        else: # global model evaluation
+            model.apply(partial(set_lambda, lam=0.0))
+    elif args.algorithm in ['superfed-mm', 'superfed-lm']:
+        if identifier is not None: # personalized model evaluation
+            model.apply(partial(set_lambda, lam=0.5))
+        else: # global model evaluation
+            model.apply(partial(set_lambda, lam=0.0))
 
     # make dataloader
-    dataloader = torch.utils.data.DataLoader(dataset, batch_size=args.B, shuffle=False, pin_memory=True)
+    dataloader = torch.utils.data.DataLoader(dataset, batch_size=args.B, shuffle=False)
     
     # track loss and metrics
     losses, acc1, acc5, ece, mce = 0, 0, 0, 0, 0
@@ -748,7 +720,7 @@ def basic_evaluate(identifier, args, model, criterion, dataset):
         ece += ces[0].item(); mce += ces[-1].item()
 
         # clear cache
-        if args.device == 'cuda': torch.cuda.empty_cache()
+        if 'cuda' in args.device: torch.cuda.empty_cache()
     else:
         losses /= len(dataloader)
         acc1 /= len(dataloader)
@@ -759,6 +731,7 @@ def basic_evaluate(identifier, args, model, criterion, dataset):
             print(f'\t[EVALUATION - CLIENT ({str(identifier).zfill(4)})] Loss: {losses:.4f}, Top1 Acc.: {acc1:.4f}, Top5 Acc.: {acc5:.4f}, ECE: {ece:.4f}, MCE: {mce:.4f}')
         else:
             print(f'\t[EVALUATION - SERVER] Loss: {losses:.4f}, Top1 Acc.: {acc1:.4f}, Top5 Acc.: {acc5:.4f}, ECE: {ece:.4f}, MCE: {mce:.4f}')
+        model.to('cpu')
     return losses, acc1, acc5, ece, mce
 
 
@@ -769,10 +742,10 @@ def superfed_evaluate(identifier, args, model, criterion, dataset, current_round
     for lam in np.arange(0.0, 1.1, 0.1):
         # prepare model
         model.eval()
-        model.to(args.device)
+        initiate_model(model, args)
         
         # make dataloader
-        dataloader = torch.utils.data.DataLoader(dataset, batch_size=args.B, shuffle=False, pin_memory=True)
+        dataloader = torch.utils.data.DataLoader(dataset, batch_size=args.B, shuffle=False)
     
         # track loss and metrics
         losses, acc1, acc5, ece, mce = 0, 0, 0, 0, 0
@@ -800,7 +773,7 @@ def superfed_evaluate(identifier, args, model, criterion, dataset, current_round
             ece += ces[0].item(); mce += ces[-1].item()
 
             # clear cache
-            if args.device == 'cuda': torch.cuda.empty_cache()
+            if 'cuda' in args.device: torch.cuda.empty_cache()
         else:
             losses /= len(dataloader)
             acc1 /= len(dataloader)
@@ -811,9 +784,9 @@ def superfed_evaluate(identifier, args, model, criterion, dataset, current_round
     
     # get best metrics to print
     results = torch.tensor(results).T
-    lowest_loss_idx = results[0].argmin()
-    losses, acc1, acc5, ece, mce = results[:, lowest_loss_idx].squeeze()
+    best_acc_idx = results[1].argmax()
+    losses, acc1, acc5, ece, mce = results[:, best_acc_idx].squeeze()
     
-
     print(f'\t[EVALUATION - CLIENT ({str(identifier).zfill(4)})] Loss: {losses:.4f}, Top1 Acc.: {acc1:.4f}, Top5 Acc.: {acc5:.4f}, ECE: {ece:.4f}, MCE: {mce:.4f}')
+    model.to('cpu')
     return results

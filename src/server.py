@@ -65,7 +65,8 @@ class Server(object):
         assert self._round == 0
         
         # setup clients (assign dataset, pass model, optimizer and criterion)
-        self.clients = Parallel(n_jobs=self.args.n_jobs, prefer='threads')(delayed(self.create_clients)(k, training_set, test_set) for k, (training_set, test_set) in tqdm(enumerate(self.client_datasets), desc='[INFO] ...enroll clients to the server!'))
+        with Parallel(n_jobs=self.args.n_jobs, prefer='threads') as parallel:
+            self.clients = parallel(delayed(self.create_clients)(k, training_set, test_set) for k, (training_set, test_set) in tqdm(enumerate(self.client_datasets), desc='[INFO] ...enroll clients to the server!'))
         del self.client_datasets; gc.collect()
         
         # filter out clients with zero samples
@@ -195,7 +196,8 @@ class Server(object):
         
         
         # 2) broadcast a global model
-        _ = Parallel(n_jobs=self.args.n_jobs, prefer='threads')(delayed(self.transmit_model)(idx) for idx in tqdm(sampled_client_indices, desc=f'[INFO] [Round: {str(self._round).zfill(4)}] ...transmit global models to clients!'))
+        with Parallel(n_jobs=self.args.n_jobs, prefer='threads') as parallel:
+            _ = parallel(delayed(self.transmit_model)(idx) for idx in tqdm(sampled_client_indices, desc=f'[INFO] [Round: {str(self._round).zfill(4)}] ...transmit global models to clients!'))
         
         ## notice
         print(f'[INFO] [Round: {str(self._round).zfill(4)}] ...successfully transmitted models to {str(len(sampled_client_indices))} selected clients!'); gc.collect()
@@ -203,7 +205,8 @@ class Server(object):
         
         
         # 3) update client models
-        selected_sizes = Parallel(n_jobs=self.args.n_jobs, prefer='threads')(delayed(self.update_clients)(idx, None) for idx in tqdm(sampled_client_indices, desc=f'[INFO] [Round: {str(self._round).zfill(4)}] ...update models of selected clients!'))
+        with Parallel(n_jobs=self.args.n_jobs, prefer='threads') as parallel:
+            selected_sizes = parallel(delayed(self.update_clients)(idx, None) for idx in tqdm(sampled_client_indices, desc=f'[INFO] [Round: {str(self._round).zfill(4)}] ...update models of selected clients!'))
 
         ## notice
         print(f'[INFO] [Round: {str(self._round).zfill(4)}] ...{len(sampled_client_indices)} clients are selected and updated!'); gc.collect()
@@ -223,7 +226,8 @@ class Server(object):
         
         
         # 5) evaluate personalization performance of selected clients
-        results = Parallel(n_jobs=self.args.n_jobs, prefer='threads')(delayed(self.evaluate_clients)(idx) for idx in tqdm(sampled_client_indices, desc=f'[INFO] [Round: {str(self._round).zfill(4)}] ...evaluate a global model in selected clients!'))
+        with Parallel(n_jobs=self.args.n_jobs, prefer='threads') as parallel:
+            results = parallel(delayed(self.evaluate_clients)(idx) for idx in tqdm(sampled_client_indices, desc=f'[INFO] [Round: {str(self._round).zfill(4)}] ...evaluate a global model in selected clients!'))
         
         ## record results
         if self.algorithm in ['superfed-mm', 'superfed-lm']:
@@ -242,12 +246,14 @@ class Server(object):
             * Set `n_jobs=os.cpu_count() // 8` to prevent OOM error
         """
         # 1) broadcast current global model to all clients
-        _ = Parallel(n_jobs=os.cpu_count() // 8, prefer='threads')(delayed(self.transmit_model)(idx) for idx in tqdm(range(self.num_clients), desc=f'[INFO] [Round: {str(self._round).zfill(4)}] ...transmit global models to ALL clients!'))
+        with Parallel(n_jobs=self.args.n_jobs, prefer='threads') as parallel:
+            _ = parallel(delayed(self.transmit_model)(idx) for idx in tqdm(range(self.num_clients), desc=f'[INFO] [Round: {str(self._round).zfill(4)}] ...transmit global models to ALL clients!'))
         
         
         
         # 2) evaluate baseline performance of all clients
-        results = Parallel(n_jobs=os.cpu_count() // 8, prefer='threads')(delayed(self.evaluate_clients)(idx) for idx in tqdm(range(self.num_clients), desc=f'[INFO] [Round: {str(self._round).zfill(4)}] ...evaluate a baseline performance of ALL clients!'))
+        with Parallel(n_jobs=self.args.n_jobs, prefer='threads') as parallel:
+            results = parallel(delayed(self.evaluate_clients)(idx) for idx in tqdm(range(self.num_clients), desc=f'[INFO] [Round: {str(self._round).zfill(4)}] ...evaluate a baseline performance of ALL clients!'))
         
         ## record results
         if self.algorithm in ['superfed-mm', 'superfed-lm']:
@@ -262,12 +268,14 @@ class Server(object):
         
         
         # 3) update all client models in a small step (i.e., one epoch)
-        _ = Parallel(n_jobs=os.cpu_count() // 8, prefer='threads')(delayed(self.update_clients)(idx, 1) for idx in tqdm(range(self.num_clients), desc=f'[INFO] [Round: {str(self._round).zfill(4)}] ...update models of ALL clients by one step!'))
+        with Parallel(n_jobs=self.args.n_jobs, prefer='threads') as parallel:
+            _ = parallel(delayed(self.update_clients)(idx, 1) for idx in tqdm(range(self.num_clients), desc=f'[INFO] [Round: {str(self._round).zfill(4)}] ...update models of ALL clients by one step!'))
         
         
         
         # 4) evaluate personalization performance of all clients
-        results = Parallel(n_jobs=os.cpu_count() // 8, prefer='threads')(delayed(self.evaluate_clients)(idx) for idx in tqdm(range(self.num_clients), desc=f'[INFO] [Round: {str(self._round).zfill(4)}] ...evaluate a personalization performance of ALL clients!'))
+        with Parallel(n_jobs=self.args.n_jobs, prefer='threads') as parallel:
+            results = parallel(delayed(self.evaluate_clients)(idx) for idx in tqdm(range(self.num_clients), desc=f'[INFO] [Round: {str(self._round).zfill(4)}] ...evaluate a personalization performance of ALL clients!'))
         
         ## record results
         if self.algorithm in ['superfed-mm', 'superfed-lm']:
@@ -298,14 +306,14 @@ class Server(object):
         """
         try:
             assert self.server_testset is not None, '[ERROR] Server should have global testset!'
-            assert self.algorithm in ['fedavg', 'fedprox', 'ditto', 'apfl', 'pfedme', 'l2gd', 'superfed-mm', 'superfed-lm'], '[ERROR] Algorithm should support an exchange of whole model parameters!'
+            assert self.algorithm in ['fedavg', 'fedprox', 'ditto', 'apfl', 'pfedme', 'superfed-mm', 'superfed-lm'], '[ERROR] Algorithm should support an exchange of whole model parameters!'
         except:
             return None
         
         # algorithm-specific evaluation is needed
         if self.algorithm in ['fedavg', 'fedprox']:
             return basic_evaluate(None, self.args, self.model, self.criterion, self.server_testset)
-        elif self.algorithm in ['superfed-mm', 'superfed-lm']:
+        elif self.algorithm in ['ditto', 'apfl', 'pfedme', 'superfed-mm', 'superfed-lm']:
             return basic_evaluate(None, self.args, self.model, self.criterion, self.server_testset)
         
     def fit(self):

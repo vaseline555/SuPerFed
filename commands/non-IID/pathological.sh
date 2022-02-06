@@ -118,7 +118,7 @@ python3 main.py --exp_name lg-fedavg_mnist_patho_100 --tb_port 21898 \
 --eval_every 200
 python3 main.py --exp_name lg-fedavg_mnist_patho_500 --tb_port 21899 \
 --dataset MNIST --is_small --in_channels 1 --num_classes 10 \
---algorithmlg-fedavg  --model_name TwoNN \
+--algorithm lg-fedavg  --model_name TwoNN \
 --C 0.01 --K 500 --R 200 --E 5 --B 10 \
 --split_type pathological --shard_size 60 \
 --eval_every 200
@@ -139,6 +139,46 @@ python3 main.py --exp_name fedper_mnist_patho_100 --tb_port 21904 \
 python3 main.py --exp_name fedper_mnist_patho_500 --tb_port 21905 \
 --dataset MNIST --is_small --in_channels 1 --num_classes 10 \
 --algorithm fedper --model_name TwoNN \
+--C 0.01 --K 500 --R 200 --E 5 --B 10 \
+--split_type pathological --shard_size 60 \
+--eval_every 200
+
+# FedRep
+python3 main.py --exp_name fedrep_mnist_patho_50 --tb_port 23341 \
+--dataset MNIST --is_small --in_channels 1 --num_classes 10 \
+--algorithm fedrep --model_name TwoNN \
+--C 0.1 --K 50 --R 200 --E 5 --B 10 \
+--split_type pathological --shard_size 600 \
+--eval_every 200
+python3 main.py --exp_name fedrep_mnist_patho_100 --tb_port 23342 \
+--dataset MNIST --is_small --in_channels 1 --num_classes 10 \
+--algorithm fedrep --model_name TwoNN \
+--C 0.05 --K 100 --R 200 --E 5 --B 10 \
+--split_type pathological --shard_size 300 \
+--eval_every 200
+python3 main.py --exp_name fedrep_mnist_patho_500 --tb_port 23343 \
+--dataset MNIST --is_small --in_channels 1 --num_classes 10 \
+--algorithm fedrep --model_name TwoNN \
+--C 0.01 --K 500 --R 200 --E 5 --B 10 \
+--split_type pathological --shard_size 60 \
+--eval_every 200
+
+# Ditto
+python3 main.py --exp_name ditto_mnist_patho_50 --tb_port 23347 \
+--dataset MNIST --is_small --in_channels 1 --num_classes 10 \
+--algorithm ditto --model_name TwoNN --fc_type LinesLinear \
+--C 0.1 --K 50 --R 200 --E 5 --B 10 \
+--split_type pathological --shard_size 600 \
+--eval_every 200
+python3 main.py --exp_name ditto_mnist_patho_100 --tb_port 23348 \
+--dataset MNIST --is_small --in_channels 1 --num_classes 10 \
+--algorithm ditto --model_name TwoNN --fc_type LinesLinear \
+--C 0.05 --K 100 --R 200 --E 5 --B 10 \
+--split_type pathological --shard_size 300 \
+--eval_every 200
+python3 main.py --exp_name ditto_mnist_patho_500 --tb_port 23349 \
+--dataset MNIST --is_small --in_channels 1 --num_classes 10 \
+--algorithm ditto --model_name TwoNN --fc_type LinesLinear \
 --C 0.01 --K 500 --R 200 --E 5 --B 10 \
 --split_type pathological --shard_size 60 \
 --eval_every 200
@@ -324,6 +364,46 @@ python3 main.py --exp_name fedper_cifar10_patho_100 --tb_port 21907 \
 python3 main.py --exp_name fedper_cifar10_patho_500 --tb_port 21908 \
 --dataset CIFAR10 --is_small --in_channels 3 --num_classes 10 \
 --algorithm fedper --model_name TwoCNN \
+--C 0.01 --K 500 --R 200 --E 5 --B 10 \
+--split_type pathological --shard_size 50 \
+--eval_every 200
+
+# FedRep
+python3 main.py --exp_name fedrep_cifar10_patho_50 --tb_port 23344 \
+--dataset CIFAR10 --is_small --in_channels 3 --num_classes 10 \
+--algorithm fedrep --model_name TwoCNN \
+--C 0.1 --K 50 --R 200 --E 5 --B 10 \
+--split_type pathological --shard_size 500 \
+--eval_every 200
+python3 main.py --exp_name fedrep_cifar10_patho_100 --tb_port 23345 \
+--dataset CIFAR10 --is_small --in_channels 3 --num_classes 10 \
+--algorithm fedrep --model_name TwoCNN \
+--C 0.05 --K 100 --R 200 --E 5 --B 10 \
+--split_type pathological --shard_size 250 \
+--eval_every 200
+python3 main.py --exp_name fedrep_cifar10_patho_500 --tb_port 23346 \
+--dataset CIFAR10 --is_small --in_channels 3 --num_classes 10 \
+--algorithm fedrep --model_name TwoCNN \
+--C 0.01 --K 500 --R 200 --E 5 --B 10 \
+--split_type pathological --shard_size 50 \
+--eval_every 200
+
+# Ditto
+python3 main.py --exp_name ditto_cifar10_patho_50 --tb_port 23350 \
+--dataset CIFAR10 --is_small --in_channels 3 --num_classes 10 \
+--algorithm ditto --model_name TwoCNN --fc_type LinesLinear --conv_type LinesConv \
+--C 0.1 --K 50 --R 200 --E 5 --B 10 \
+--split_type pathological --shard_size 500 \
+--eval_every 200
+python3 main.py --exp_name ditto_cifar10_patho_100 --tb_port 23351 \
+--dataset CIFAR10 --is_small --in_channels 3 --num_classes 10 \
+--algorithm ditto --model_name TwoCNN --fc_type LinesLinear --conv_type LinesConv \
+--C 0.05 --K 100 --R 200 --E 5 --B 10 \
+--split_type pathological --shard_size 250 \
+--eval_every 200
+python3 main.py --exp_name ditto_cifar10_patho_500 --tb_port 23352 \
+--dataset CIFAR10 --is_small --in_channels 3 --num_classes 10 \
+--algorithm ditto --model_name TwoCNN --fc_type LinesLinear --conv_type LinesConv \
 --C 0.01 --K 500 --R 200 --E 5 --B 10 \
 --split_type pathological --shard_size 50 \
 --eval_every 200
