@@ -518,9 +518,9 @@ def pfedme_update(identifier, args, model, criterion, dataset, optimizer, lr, ep
     
     # update local model first
     for e in range(args.E if epochs is None else epochs):
+        # track loss and metrics
+        losses, acc1, acc5, ece, mce = 0, 0, 0, 0, 0
         for local_epoch in range(args.tau):
-            # track loss and metrics
-            losses, acc1, acc5, ece, mce = 0, 0, 0, 0, 0
             for inputs, targets in dataloader:
                 inputs, targets = inputs.to(args.device), targets.to(args.device)
 
@@ -543,21 +543,21 @@ def pfedme_update(identifier, args, model, criterion, dataset, optimizer, lr, ep
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step() 
-        else:
-            # get the final loss
-            losses += loss.item()
             
-            # get the final accuracy
-            accs = get_accuracy(outputs, targets, (1, 5))
-            acc1 += accs[0].item(); acc5 += accs[-1].item()
+                # get the final loss
+                losses += loss.item()
 
-            # get calibration errors
-            ces = CalibrationError()(outputs, targets)
-            ece += ces[0].item(); mce += ces[-1].item()
+                # get the final accuracy
+                accs = get_accuracy(outputs, targets, (1, 5))
+                acc1 += accs[0].item(); acc5 += accs[-1].item()
 
-            # clear cache
-            if 'cuda' in args.device: torch.cuda.empty_cache()
-
+                # get calibration errors
+                ces = CalibrationError()(outputs, targets)
+                ece += ces[0].item(); mce += ces[-1].item()
+  
+                # clear cache
+                if 'cuda' in args.device: torch.cuda.empty_cache()
+        else:
             # update global model based on the \delta-approximated local model weights (line 8 of Algorihtm 1 in the paper)
             weights = model.state_dict()
             for name in weights.keys():
@@ -569,11 +569,11 @@ def pfedme_update(identifier, args, model, criterion, dataset, optimizer, lr, ep
                 del weights; gc.collect()
             
             # get losses & metrics
-            losses /= len(dataloader)
-            acc1 /= len(dataloader)
-            acc5 /= len(dataloader)
-            ece /= len(dataloader)
-            mce /= len(dataloader)
+            losses /= len(dataloader) * args.tau
+            acc1 /= len(dataloader) * args.tau
+            acc5 /= len(dataloader) * args.tau
+            ece /= len(dataloader) * args.tau
+            mce /= len(dataloader) * args.tau
             print(f'\t[TRAINING - CLIENT ({str(identifier).zfill(4)})] [EPOCH: {str(e).zfill(2)}] Loss: {losses:.4f}, Top1 Acc.: {acc1:.4f}, Top5 Acc.: {acc5:.4f}, ECE: {ece:.4f}, MCE: {mce:.4f}')
     else:
         model = model.to('cpu')
@@ -684,16 +684,13 @@ def basic_evaluate(identifier, args, model, criterion, dataset):
     model.eval()
     initiate_model(model, args)
     
-    if args.algorithm in ['apfl', 'ditto', 'pfedme']:
-        if identifier is not None: # personalized model evaluation
+    if identifier is not None: # personalized model evaluation
+        if args.algorithm in ['apfl', 'ditto', 'pfedme']:
             model.apply(partial(set_lambda, lam=args.apfl_constant if args.algorithm == 'apfl' else 1.0))
-        else: # global model evaluation
-            model.apply(partial(set_lambda, lam=0.0))
-    elif args.algorithm in ['superfed-mm', 'superfed-lm']:
-        if identifier is not None: # personalized model evaluation
+        elif args.algorithm in ['superfed-mm', 'superfed-lm']:
             model.apply(partial(set_lambda, lam=0.5))
-        else: # global model evaluation
-            model.apply(partial(set_lambda, lam=0.0))
+    else: # global model evaluation
+        model.apply(partial(set_lambda, lam=0.0))
 
     # make dataloader
     dataloader = torch.utils.data.DataLoader(dataset, batch_size=args.B, shuffle=False)

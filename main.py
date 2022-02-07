@@ -98,7 +98,7 @@ if __name__ == "__main__":
     parser.add_argument('--plot_path', help='plot path', type=str, default='./plot')
     parser.add_argument('--tb_port', help='TensorBoard port number', type=int, default=6006)
     parser.add_argument('--tb_host', help='TensorBoard host address', type=str, default='0.0.0.0')
-    parser.add_argument('--n_jobs', help='workeres for multiprocessing', type=int, default=-1)
+    parser.add_argument('--n_jobs', help='workeres for multiprocessing', type=int, default=16)
     
     # dataset related arguments
     parser.add_argument('--dataset', help='name of dataset to use for an experiment: [MNIST|CIFAR10|CIFAR100|TinyImageNet|FEMNIST|Shakespeare|]', type=str, choices=['MNIST', 'CIFAR10', 'CIFAR100', 'TinyImageNet', 'FEMNIST', 'Shakespeare'], required=True)

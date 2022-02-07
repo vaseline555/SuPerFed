@@ -6,7 +6,7 @@ import numpy as np
 
 from tqdm import tqdm
 from collections import OrderedDict, defaultdict
-from joblib import Parallel, delayed
+from multiprocessing import pool
 
 from .client import Client
 from .algorithm import *
@@ -65,8 +65,8 @@ class Server(object):
         assert self._round == 0
         
         # setup clients (assign dataset, pass model, optimizer and criterion)
-        with Parallel(n_jobs=self.args.n_jobs, prefer='threads') as parallel:
-            self.clients = parallel(delayed(self.create_clients)(k, training_set, test_set) for k, (training_set, test_set) in tqdm(enumerate(self.client_datasets), desc='[INFO] ...enroll clients to the server!'))
+        with pool.ThreadPool(processes=self.args.n_jobs) as workhorse:
+            self.clients = workhorse.starmap(self.create_clients, [(k, training_set, test_set) for k, (training_set, test_set) in tqdm(enumerate(self.client_datasets), desc='[INFO] ...enroll clients to the server!')])
         del self.client_datasets; gc.collect()
         
         # filter out clients with zero samples
@@ -109,7 +109,7 @@ class Server(object):
             
         # transmit parameters of a federated model only (alpha = 0)
         elif self.algorithm in ['ditto', 'apfl', 'pfedme', 'superfed-mm', 'superfed-lm']:
-            global_model = {k: v for k, v in self.model.state_dict().items() if '_local' not in k}
+            global_model = {k: v for k, v in self.model.state_dict().items() if 'local' not in k}
             federated_model_at_client = copy.deepcopy(self.clients[idx].model.state_dict())
             federated_model_at_client.update(global_model)
             self.clients[idx].model.load_state_dict(federated_model_at_client)
@@ -173,7 +173,7 @@ class Server(object):
             for it, idx in tqdm(enumerate(sampled_client_indices), leave=False):
                 local_weights = self.clients[idx].model.state_dict()
                 for key in self.model.state_dict().keys():
-                    if '_local' not in key:
+                    if 'local' not in key:
                         if it == 0:
                             aggregated_weights[key] = coefficients[it] * local_weights[key]
                         else:
@@ -196,8 +196,8 @@ class Server(object):
         
         
         # 2) broadcast a global model
-        with Parallel(n_jobs=self.args.n_jobs, prefer='threads') as parallel:
-            _ = parallel(delayed(self.transmit_model)(idx) for idx in tqdm(sampled_client_indices, desc=f'[INFO] [Round: {str(self._round).zfill(4)}] ...transmit global models to clients!'))
+        with pool.ThreadPool(processes=self.args.n_jobs) as workhorse:
+            workhorse.map(self.transmit_model, tqdm(sampled_client_indices, desc=f'[INFO] [Round: {str(self._round).zfill(4)}] ...transmit global models to clients!'))
         
         ## notice
         print(f'[INFO] [Round: {str(self._round).zfill(4)}] ...successfully transmitted models to {str(len(sampled_client_indices))} selected clients!'); gc.collect()
@@ -205,8 +205,8 @@ class Server(object):
         
         
         # 3) update client models
-        with Parallel(n_jobs=self.args.n_jobs, prefer='threads') as parallel:
-            selected_sizes = parallel(delayed(self.update_clients)(idx, None) for idx in tqdm(sampled_client_indices, desc=f'[INFO] [Round: {str(self._round).zfill(4)}] ...update models of selected clients!'))
+        with pool.ThreadPool(processes=self.args.n_jobs) as workhorse:
+            selected_sizes = workhorse.starmap(self.update_clients, [(idx, None) for idx in tqdm(sampled_client_indices, desc=f'[INFO] [Round: {str(self._round).zfill(4)}] ...update models of selected clients!')])
 
         ## notice
         print(f'[INFO] [Round: {str(self._round).zfill(4)}] ...{len(sampled_client_indices)} clients are selected and updated!'); gc.collect()
@@ -226,8 +226,8 @@ class Server(object):
         
         
         # 5) evaluate personalization performance of selected clients
-        with Parallel(n_jobs=self.args.n_jobs, prefer='threads') as parallel:
-            results = parallel(delayed(self.evaluate_clients)(idx) for idx in tqdm(sampled_client_indices, desc=f'[INFO] [Round: {str(self._round).zfill(4)}] ...evaluate a global model in selected clients!'))
+        with pool.ThreadPool(processes=self.args.n_jobs) as workhorse:
+            results = workhorse.map(self.evaluate_clients, tqdm(sampled_client_indices, desc=f'[INFO] [Round: {str(self._round).zfill(4)}] ...evaluate a global model in selected clients!'))
         
         ## record results
         if self.algorithm in ['superfed-mm', 'superfed-lm']:
@@ -242,23 +242,21 @@ class Server(object):
     
     def evaluate_personalized_model(self):
         """Evaluate the personalization performance of given algorithm using all of the client-side holdout dataset.
-            
-            * Set `n_jobs=os.cpu_count() // 8` to prevent OOM error
         """
         # 1) broadcast current global model to all clients
-        with Parallel(n_jobs=self.args.n_jobs, prefer='threads') as parallel:
-            _ = parallel(delayed(self.transmit_model)(idx) for idx in tqdm(range(self.num_clients), desc=f'[INFO] [Round: {str(self._round).zfill(4)}] ...transmit global models to ALL clients!'))
+        with pool.ThreadPool(processes=self.args.n_jobs) as workhorse:
+            workhorse.map(self.transmit_model, tqdm(range(self.num_clients), desc=f'[INFO] [Round: {str(self._round).zfill(4)}] ...transmit global models to ALL clients!'))
         
         
         
         # 2) evaluate baseline performance of all clients
-        with Parallel(n_jobs=self.args.n_jobs, prefer='threads') as parallel:
-            results = parallel(delayed(self.evaluate_clients)(idx) for idx in tqdm(range(self.num_clients), desc=f'[INFO] [Round: {str(self._round).zfill(4)}] ...evaluate a baseline performance of ALL clients!'))
+        with pool.ThreadPool(processes=self.args.n_jobs) as workhorse:
+            results = workhorse.map(self.evaluate_clients, tqdm(range(self.num_clients), desc=f'[INFO] [Round: {str(self._round).zfill(4)}] ...evaluate a baseline performance of ALL clients!'))
         
         ## record results
         if self.algorithm in ['superfed-mm', 'superfed-lm']:
-            results_all = torch.stack([torch.stack(tensor) for tensor in results]) # args.K x 5 x 21
-            self.results, base_loss, base_acc1, base_acc5, base_ece, base_mce = record_results(self.args, self.writer, self.results, 'baseline_all', self._round, *results_all.mean(-1))
+            results_all = torch.stack([torch.stack(tensor) for tensor in results]) # args.K x 5 x 11
+            self.results, base_loss, base_acc1, base_acc5, base_ece, base_mce = record_results(self.args, self.writer, self.results, 'baseline_all', self._round, *results_all.mean(-1).T)
         else:
             self.results, base_loss, base_acc1, base_acc5, base_ece, base_mce = record_results(self.args, self.writer, self.results, 'baseline_all', self._round // self.args.eval_every, *torch.tensor(results).T)
 
@@ -268,19 +266,19 @@ class Server(object):
         
         
         # 3) update all client models in a small step (i.e., one epoch)
-        with Parallel(n_jobs=self.args.n_jobs, prefer='threads') as parallel:
-            _ = parallel(delayed(self.update_clients)(idx, 1) for idx in tqdm(range(self.num_clients), desc=f'[INFO] [Round: {str(self._round).zfill(4)}] ...update models of ALL clients by one step!'))
+        with pool.ThreadPool(processes=self.args.n_jobs) as workhorse:
+            workhorse.map(self.update_clients, [(idx, 1) for idx in tqdm(sampled_client_indices, desc=f'[INFO] [Round: {str(self._round).zfill(4)}] ...update models of selected clients!')])
         
         
         
         # 4) evaluate personalization performance of all clients
-        with Parallel(n_jobs=self.args.n_jobs, prefer='threads') as parallel:
-            results = parallel(delayed(self.evaluate_clients)(idx) for idx in tqdm(range(self.num_clients), desc=f'[INFO] [Round: {str(self._round).zfill(4)}] ...evaluate a personalization performance of ALL clients!'))
-        
+        with pool.ThreadPool(processes=self.args.n_jobs) as workhorse:
+            results = workhorse.map(self.evaluate_clients, tqdm(range(self.num_clients), desc=f'[INFO] [Round: {str(self._round).zfill(4)}] ...evaluate a personalization performance of ALL clients!'))
+
         ## record results
         if self.algorithm in ['superfed-mm', 'superfed-lm']:
             results_all = torch.stack([torch.stack(tensor) for tensor in results]) # args.K x 5 x 21
-            self.results, per_loss, per_acc1, per_acc5, per_ece, per_mce = record_results(self.args, self.writer, self.results, 'personalized_all', self._round, *results_all.mean(0).mean(1))
+            self.results, per_loss, per_acc1, per_acc5, per_ece, per_mce = record_results(self.args, self.writer, self.results, 'personalized_all', self._round, *results_all.mean(-1).T)
             
             # plot change dynamics of loss & metrics
             plot_by_lambda(self.args, self._round // self.args.eval_every, results_all)
@@ -309,12 +307,7 @@ class Server(object):
             assert self.algorithm in ['fedavg', 'fedprox', 'ditto', 'apfl', 'pfedme', 'superfed-mm', 'superfed-lm'], '[ERROR] Algorithm should support an exchange of whole model parameters!'
         except:
             return None
-        
-        # algorithm-specific evaluation is needed
-        if self.algorithm in ['fedavg', 'fedprox']:
-            return basic_evaluate(None, self.args, self.model, self.criterion, self.server_testset)
-        elif self.algorithm in ['ditto', 'apfl', 'pfedme', 'superfed-mm', 'superfed-lm']:
-            return basic_evaluate(None, self.args, self.model, self.criterion, self.server_testset)
+        return basic_evaluate(None, self.args, self.model, self.criterion, self.server_testset)
         
     def fit(self):
         """Execute the whole process of the federated learning.

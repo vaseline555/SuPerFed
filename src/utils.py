@@ -7,7 +7,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from tqdm import tqdm
-from joblib import Parallel, delayed
+from multiprocessing import pool
 
 from .dataset import TinyImageNetDataset, FEMNISTDataset, ShakespeareDataset, LabelNoiseDataset
 
@@ -178,8 +178,8 @@ class LEAFParser:
             tr_dset.num_samples = merged_train['num_samples'][idx]; te_dset.num_samples = merged_test['num_samples'][idx]
             tr_dset._make_dataset(); te_dset._make_dataset()
             return (tr_dset, te_dset)
-        with Parallel(n_jobs=self.n_jobs, prefer='threads') as parallel:
-            datasets = parallel(delayed(construct_leaf)(idx, user) for idx, user in tqdm(enumerate(merged_train['users']), desc=f'[INFO] ...create datasets [LEAF - {self.dataset_name.upper()}]!'))
+        with pool.ThreadPool(processes=self.n_jobs) as workhorse:
+            datasets = workhorse.starmap(construct_leaf, [(idx, user) for idx, user in tqdm(enumerate(merged_train['users']), desc=f'[INFO] ...create datasets [LEAF - {self.dataset_name.upper()}]!')])
         split_map = dict(zip([i for i in range(len(merged_train['user_data']))], list(map(sum, zip(merged_train['num_samples'], merged_test['num_samples'])))))
         return split_map, datasets
     
@@ -245,8 +245,8 @@ def get_dataset(args):
         split_map = split_data(args, raw_train)
 
         # construct client datasets
-        with Parallel(n_jobs=args.n_jobs, prefer='threads') as parallel:
-            client_datasets = parallel(delayed(construct_dataset)(indices) for _, indices in tqdm(split_map.items(), desc=f'[INFO] ...create datasets [{args.dataset}]!'))
+        with pool.ThreadPool(processes=args.n_jobs) as workhorse:
+            client_datasets = workhorse.map(construct_dataset, tqdm(split_map.values(), desc=f'[INFO] ...create datasets [{args.dataset}]!'))
         return split_map, raw_test, client_datasets
     
     elif args.dataset == 'TinyImageNet':
@@ -276,8 +276,8 @@ def get_dataset(args):
         split_map = split_data(args, raw_train)
         
         # construct client datasets
-        with Parallel(n_jobs=args.n_jobs, prefer='threads') as parallel:
-            client_datasets = parallel(delayed(construct_dataset)(indices) for _, indices in tqdm(split_map.items(), desc=f'[INFO] ...create datasets [{args.dataset}]!'))
+        with pool.ThreadPool(processes=args.n_jobs) as workhorse:
+            client_datasets = workhorse.map(construct_dataset, tqdm(split_map.values(), desc=f'[INFO] ...create datasets [{args.dataset}]!'))
         return split_map, raw_test, client_datasets
     
     elif args.dataset in ['FEMNIST', 'Shakespeare']:

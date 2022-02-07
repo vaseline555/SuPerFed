@@ -4,58 +4,66 @@
 ###########
 python3 main.py --exp_name _femnist --tb_port  \
 --dataset FEMNIST --is_small --in_channels 1 --num_classes 62 \
---algorithm  --model_name ResNet18 \
---C 0.007 --R 200 --E 5 --B 10 \
+--algorithm  --model_name TwoNN \
+--C 0.007 --R 1000 --E 1 --B 10 --lr 0.1 \
 --split_type realistic \
---eval_every 200
+--eval_every 1000
 
 # FedAvg
 python3 main.py --exp_name fedavg_femnist --tb_port 11 \
 --dataset FEMNIST --is_small --in_channels 1 --num_classes 62 \
---algorithm fedavg --model_name ResNet18 \
---C 0.007 --R 200 --E 5 --B 10 \
+--algorithm fedavg --model_name TwoNN \
+--C 0.007 --R 1000 --E 1 --B 10 --lr 0.1  \
 --split_type realistic \
---eval_every 200
+--eval_every 1000
 
 # FedProx
 python3 main.py --exp_name fedprox_femnist --tb_port 12 \
 --dataset FEMNIST --is_small --in_channels 1 --num_classes 62 \
---algorithm fedprox --model_name ResNet18 \
---C 0.007 --R 200 --E 5 --B 10 \
+--algorithm fedprox --model_name TwoNN \
+--C 0.007 --R 1000 --E 1 --B 10 --lr 0.1  \
 --split_type realistic \
---eval_every 200
+--eval_every 1000
 
 # LG-FedAvg
 python3 main.py --exp_name lg-fedavg_femnist --tb_port 13 \
 --dataset FEMNIST --is_small --in_channels 1 --num_classes 62 \
---algorithm lg-fedavg --model_name ResNet18 \
---C 0.007 --R 200 --E 5 --B 10 \
+--algorithm lg-fedavg --model_name TwoNN \
+--C 0.007 --R 1000 --E 1 --B 10 --lr 0.1  \
 --split_type realistic \
---eval_every 200
+--eval_every 1000
 
 # FedPer
-python3 main.py --exp_name fedper_femnist --tb_port  \
+python3 main.py --exp_name fedper_femnist --tb_port 14 \
 --dataset FEMNIST --is_small --in_channels 1 --num_classes 62 \
---algorithm fedper --model_name ResNet18 \
---C 0.007 --R 200 --E 5 --B 10 \
+--algorithm fedper --model_name TwoNN \
+--C 0.007 --R 1000 --E 1 --B 10 --lr 0.1  \
 --split_type realistic \
---eval_every 200
+--eval_every 1000
+
+# FedRep
+python3 main.py --exp_name fedrep_femnist --tb_port 23 \
+--dataset FEMNIST --is_small --in_channels 1 --num_classes 62 \
+--algorithm fedrep --model_name ResNet18 \
+--C 0.007 --R 1000 --E 1 --B 10 --lr 0.1  \
+--split_type realistic \
+--eval_every 1000
 
 # SuPerFed-MM
 python3 main.py --exp_name superfed-mm_femnist --tb_port 6666 \
 --dataset FEMNIST --is_small --in_channels 1 --num_classes 62 \
 --algorithm superfed-mm --model_name ResNet18 --fc_type LinesLinear --bn_type LinesBN --conv_type LinesConv \
---C 0.007 --R 200 --E 5 --B 10 \
+--C 0.007 --R 1000 --E 1 --B 10 --lr 0.1  \
 --split_type realistic \
---eval_every 200
+--eval_every 1000
 
 # SuPerFed-LM
 python3 main.py --exp_name superfed-lm_femnist --tb_port 6667 \
 --dataset FEMNIST --is_small --in_channels 1 --num_classes 62 \
 --algorithm superfed-lm --model_name ResNet18 --fc_type LinesLinear --bn_type LinesBN --conv_type LinesConv \
---C 0.007 --R 200 --E 5 --B 10 \
+--C 0.007 --R 1000 --E 1 --B 10 --lr 0.1  \
 --split_type realistic \
---eval_every 200
+--eval_every 1000
 
 
 ###############

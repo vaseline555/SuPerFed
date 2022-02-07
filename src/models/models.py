@@ -15,7 +15,7 @@ class TwoNN(nn.Module):
             builder.linear(in_features=200, out_features=200, bias=True),
             nn.ReLU(True)
         )
-        self.classifier = builder.linear(in_features=200, out_features=10, bias=True)
+        self.classifier = builder.linear(in_features=200, out_features=args.num_classes, bias=True)
 
     def forward(self, x):
         if x.ndim == 4:
@@ -29,7 +29,7 @@ class TwoCNN(nn.Module):
         super(TwoCNN, self).__init__()
         self.activation = nn.ReLU(True)
         self.layers = nn.Sequential(
-            builder.conv(in_channels=3, out_channels=32, kernel_size=5, padding=1, stride=1, bias=False),
+            builder.conv(in_channels=args.in_channels, out_channels=32, kernel_size=5, padding=1, stride=1, bias=False),
             nn.ReLU(True),
             nn.MaxPool2d(kernel_size=2, padding=1),
             builder.conv(in_channels=32, out_channels=64, kernel_size=5, padding=1, stride=1, bias=False),
@@ -39,7 +39,7 @@ class TwoCNN(nn.Module):
             builder.linear(in_features=(32 * 2) * (7 * 7), out_features=200, bias=True),
             nn.ReLU(True)
         )
-        self.classifier = builder.linear(in_features=200, out_features=10, bias=True)
+        self.classifier = builder.linear(in_features=200, out_features=args.num_classes, bias=True)
         
     def forward(self, x):
         x = self.layers(x)
