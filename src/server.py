@@ -256,8 +256,8 @@ class Server(object):
         ## record results
         if self.algorithm in ['superfed-mm', 'superfed-lm']:
             results_all = torch.stack([torch.stack(tensor) for tensor in results]) # args.K x 5 x 11
-            self.results, base_loss, base_acc1, base_acc5, base_ece, base_mce = record_results(self.args, self.writer, self.results, 'baseline_all', self._round, *results_all.mean(-1).T)
-        else:
+            self.results, base_loss, base_acc1, base_acc5, base_ece, base_mce = record_results(self.args, self.writer, self.results, 'baseline_all', self._round, *torch.index_select(results_all, dim=2, index=results_all[:, 1, :].argmax(-1)).max(-1)[0].T)
+        else: # args.K x 5
             self.results, base_loss, base_acc1, base_acc5, base_ece, base_mce = record_results(self.args, self.writer, self.results, 'baseline_all', self._round // self.args.eval_every, *torch.tensor(results).T)
 
         ## notice
@@ -283,7 +283,7 @@ class Server(object):
             # plot change dynamics of loss & metrics
             plot_by_lambda(self.args, self._round // self.args.eval_every, results_all)
         else:
-            self.results, per_loss, per_acc1, per_acc5, per_ece, per_mce = record_results(self.args, self.writer, self.results, 'personalized_all', self._round // self.args.eval_every, *torch.tensor(results).T)
+            self.results, per_loss, per_acc1, per_acc5, per_ece, per_mce = record_results(self.args, self.writer, self.results, 'personalized_all', self._round // self.args.eval_every, *torch.index_select(results_all, dim=2, index=results_all[:, 1, :].argmax(-1)).max(-1)[0].T)
         
         ## notice
         print(f'[INFO] [Round: {str(self._round).zfill(4)}] ...finished personalization evaluation of ALL clients!'); gc.collect()

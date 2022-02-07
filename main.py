@@ -124,7 +124,7 @@ if __name__ == "__main__":
     parser.add_argument('--R', help='number of total federated learning rounds', type=int, default=1000)
     parser.add_argument('--E', help='number of local epochs', type=int, default=10)
     parser.add_argument('--B', help='batch size for local update in each client', type=int, default=10)
-    parser.add_argument('--L', help='when to start local training round (start local model training from `floor(L * R)` round)', type=float, default=0.4)
+    parser.add_argument('--L', help='when to start local training round (start local model training from `floor(L * R)` round)', type=float, default=0.0)
     parser.add_argument('--eval_every', help='evaluate at every `eval_every` round', type=int, default=100)
     
     # optimization related arguments
@@ -136,7 +136,7 @@ if __name__ == "__main__":
     parser.add_argument('--apfl_constant', help='constant for mixing models (for apfl)', type=float, default=0.25)
     
     # model related arguments
-    parser.add_argument('--model_name', help='model to use [TwoNN|TwoCNN|NextCharLM|ResNet18|MobileNetv2]', type=str, choices=['TwoNN', 'TwoCNN', 'NextCharLM', 'ResNet18', 'MobileNetv2'])
+    parser.add_argument('--model_name', help='model to use [TwoNN|TwoCNN|NextCharLM|ResNet18|MobileNetv2|VGG9]', type=str, choices=['TwoNN', 'TwoCNN', 'NextCharLM', 'ResNet18', 'MobileNetv2', 'VGG9'])
     parser.add_argument('--init_type', type=str, help='initialization type [normal|xavier|xavier_uniform|kaiming|orthogonal|none]', default='xavier', choices=['xavier', 'normal', 'kaiming', 'xavier_uniform', 'orthogonal', 'none'])
     parser.add_argument('--init_gain', type=float, help='init gain for init type', default=1.0)
     parser.add_argument('--fc_type', help='type of fully connected layer', type=str, choices=['StandardLinear', 'LinesLinear'], default='StandardLinear')

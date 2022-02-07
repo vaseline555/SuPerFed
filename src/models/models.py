@@ -255,3 +255,44 @@ class MobileNetv2(nn.Module):
         x = self.flatten(x)
         x = self.classifier(x)
         return x
+    
+    
+    
+########
+# VGG9 #
+########
+class VGG9(nn.Module):
+    def __init__(self, builder, args, block):
+        super(VGG9, self).__init__() 
+        self.layers = nn.Sequential(
+            builder.conv(in_channels=args.in_channels, out_channels=64, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.MaxPool2d(kernel_size=2, stride=2),
+            builder.conv(in_channels=64, out_channels=128, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.MaxPool2d(kernel_size=2, stride=2),
+            builder.conv(in_channels=128, out_channels=256, kernel_size=3, padding=1),
+            nn.ReLU(),
+            builder.conv(in_channels=256, out_channels=256, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.MaxPool2d(kernel_size=2, stride=2),
+            builder.conv(in_channels=256, out_channels=512, kernel_size=3, padding=1),
+            nn.ReLU(),
+            builder.conv(in_channels=512, out_channels=512, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.MaxPool2d(kernel_size=2, stride=2),
+            nn.Flatten()
+        )
+        self.classifier = nn.Sequential(
+            builder.linear(in_features=512, out_features=512),
+            nn.ReLU(),
+            nn.Dropout2d(0.5),
+            builder.linear(in_features=512, out_features=512),
+            nn.ReLU(),
+            nn.Dropout2d(0.5),
+            builder.linear(in_features=512, out_features=args.num_classes)
+        )
+    def forward(self, x):
+        x = self.layers(x)
+        x = self.classifier(x)
+        return x
