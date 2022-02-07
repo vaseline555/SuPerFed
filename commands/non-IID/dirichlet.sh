@@ -87,21 +87,21 @@ python3 main.py --exp_name lg-fedavg_cifar100_diri_1 --tb_port 3 \
 python3 main.py --exp_name fedper_cifar100_diri_01 --tb_port 2222 \
 --dataset CIFAR100 --is_small --in_channels 3 --num_classes 100 \
 --algorithm fedper --model_name ResNet18 \
---C 0.01 --K 500 --R 200 --E 5 --B 10 \
+--C 0.01 --K 500 --R 1000 --E 5 --B 10 \
 --split_type dirichlet --alpha 0.1 \
---eval_every 200
+--eval_every 1000
 python3 main.py --exp_name fedper_cifar100_diri_05 --tb_port 2223 \
 --dataset CIFAR100 --is_small --in_channels 3 --num_classes 100 \
 --algorithm fedper --model_name ResNet18 \
---C 0.01 --K 500 --R 200 --E 5 --B 10 \
+--C 0.01 --K 500 --R 1000 --E 5 --B 10 \
 --split_type dirichlet --alpha 0.5 \
---eval_every 200
+--eval_every 1000
 python3 main.py --exp_name fedper_cifar100_diri_1 --tb_port 2224 \
 --dataset CIFAR100 --is_small --in_channels 3 --num_classes 100 \
 --algorithm fedper --model_name ResNet18 \
---C 0.01 --K 500 --R 200 --E 5 --B 10 \
+--C 0.01 --K 500 --R 1000 --E 5 --B 10 \
 --split_type dirichlet --alpha 1.0 \
---eval_every 200
+--eval_every 1000
 
 # APFL
 python3 main.py --exp_name apfl_cifar100_diri_01 --tb_port 7 \
@@ -126,22 +126,22 @@ python3 main.py --exp_name apfl_cifar100_diri_1 --tb_port 9 \
 # pFedMe
 python3 main.py --exp_name pfedme_cifar100_diri_01 --tb_port 1 \
 --dataset CIFAR100 --is_small --in_channels 3 --num_classes 100 \
---algorithm pfedme --model_name ResNet18 \
---C 0.01 --K 500 --R 200 --E 5 --B 10 \
+--algorithm pfedme --model_name ResNet18 --fc_type LinesLinear --conv_type LinesConv --bn_type LinesBN \
+--C 0.01 --K 500 --R 1000 --E 5 --B 10 \
 --split_type dirichlet --alpha 0.1 \
---eval_every 200
+--eval_every 1000
 python3 main.py --exp_name pfedme_cifar100_diri_05 --tb_port 2 \
 --dataset CIFAR100 --is_small --in_channels 3 --num_classes 100 \
---algorithm pfedme --model_name ResNet18 \
---C 0.01 --K 500 --R 200 --E 5 --B 10 \
+--algorithm pfedme --model_name ResNet18 --fc_type LinesLinear --conv_type LinesConv --bn_type LinesBN \
+--C 0.01 --K 500 --R 1000 --E 5 --B 10 \
 --split_type dirichlet --alpha 0.5 \
---eval_every 200
+--eval_every 1000
 python3 main.py --exp_name pfedme_cifar100_diri_1 --tb_port 3 \
 --dataset CIFAR100 --is_small --in_channels 3 --num_classes 100 \
---algorithm pfedme --model_name ResNet18 \
---C 0.01 --K 500 --R 200 --E 5 --B 10 \
+--algorithm pfedme --model_name ResNet18 --fc_type LinesLinear --conv_type LinesConv --bn_type LinesBN \
+--C 0.01 --K 500 --R 1000 --E 5 --B 10 \
 --split_type dirichlet --alpha 1.0 \
---eval_every 200
+--eval_every 1000
 
 # Ditto
 python3 main.py --exp_name ditto_cifar100_diri_01 --tb_port 1 \

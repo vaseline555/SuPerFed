@@ -376,12 +376,12 @@ def initiate_model(model, args):
     cuda_string = 'cuda' if args.device_ids == [] else f'cuda:{args.device_ids[0]}'
     device = cuda_string if torch.cuda.is_available() else 'cpu'
     
-    # GPU setting
-    if ('cuda' in device) and (torch.cuda.device_count() > 1):
-        if args.device_ids == []:
-            model = torch.nn.DataParallel(model, device_ids=[i for i in range(torch.cuda.device_count())])
-        else:
-            model = torch.nn.DataParallel(model, device_ids=args.device_ids)
+    ## GPU setting
+    #if ('cuda' in device) and (torch.cuda.device_count() > 1):
+    #    if args.device_ids == []:
+    #        model = torch.nn.DataParallel(model, device_ids=[i for i in range(torch.cuda.device_count())])
+    #    else:
+    #        model = torch.nn.DataParallel(model, device_ids=args.device_ids)
     model.to(device)
 
 
@@ -580,7 +580,7 @@ def plot_delta_histogram(args, writer, mode, step, delta):
     
     # save
     fig.savefig(f'./{args.plot_path}/{args.exp_name}/delta_histogram_{mode}_{str(int(step * args.eval_every)).zfill(4)}.png')
-    
+    np.save(f'./{args.plot_path}/{args.exp_name}/delta_{mode}_{str(int(step * args.eval_every)).zfill(4)}', np.array(delta))
     
     
 ##################################

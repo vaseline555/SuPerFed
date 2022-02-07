@@ -4,7 +4,7 @@ import copy
 import torch
 import numpy as np
 
-from tqdm import tqdm
+from tqdm import tqdm, trange
 from collections import OrderedDict, defaultdict
 from multiprocessing import pool
 
@@ -267,13 +267,13 @@ class Server(object):
         
         # 3) update all client models in a small step (i.e., one epoch)
         with pool.ThreadPool(processes=self.args.n_jobs) as workhorse:
-            workhorse.map(self.update_clients, [(idx, 1) for idx in tqdm(sampled_client_indices, desc=f'[INFO] [Round: {str(self._round).zfill(4)}] ...update models of selected clients!')])
+            workhorse.starmap(self.update_clients, [(idx, 1) for idx in trange(self.num_clients, desc=f'[INFO] [Round: {str(self._round).zfill(4)}] ...update models of ALL clients by one step!')])
         
         
         
         # 4) evaluate personalization performance of all clients
         with pool.ThreadPool(processes=self.args.n_jobs) as workhorse:
-            results = workhorse.map(self.evaluate_clients, tqdm(range(self.num_clients), desc=f'[INFO] [Round: {str(self._round).zfill(4)}] ...evaluate a personalization performance of ALL clients!'))
+            results = workhorse.map(self.evaluate_clients, trange(self.num_clients, desc=f'[INFO] [Round: {str(self._round).zfill(4)}] ...evaluate a personalization performance of ALL clients!'))
 
         ## record results
         if self.algorithm in ['superfed-mm', 'superfed-lm']:
