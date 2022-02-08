@@ -101,7 +101,7 @@ if __name__ == "__main__":
     parser.add_argument('--n_jobs', help='workeres for multiprocessing', type=int, default=16)
     
     # dataset related arguments
-    parser.add_argument('--dataset', help='name of dataset to use for an experiment: [MNIST|CIFAR10|CIFAR100|TinyImageNet|FEMNIST|Shakespeare|]', type=str, choices=['MNIST', 'CIFAR10', 'CIFAR100', 'TinyImageNet', 'FEMNIST', 'Shakespeare'], required=True)
+    parser.add_argument('--dataset', help='name of dataset to use for an experiment: [MNIST|CIFAR10|CIFAR100|TinyImageNet|FEMNIST|Shakespeare|]', type=str, choices=['MNIST', 'CIFAR10', 'CIFAR100', 'TinyImageNet', 'FEMNIST', 'Shakespeare', 'KMNIST', 'SVHN', 'Places365'], required=True)
     parser.add_argument('--is_small', help='indicates the size of inputs is small; only used for MobileNetv2 (if passed)', action='store_true')
     parser.add_argument('--in_channels', help='input channels for image dataset (ignored when `Shakespeare` dataset is used)', type=int, default=3)
     parser.add_argument('--num_classes', help='number of classes to predict (ignored when `Shakespeare` dataset is used)', type=int, default=10)
@@ -126,12 +126,13 @@ if __name__ == "__main__":
     parser.add_argument('--B', help='batch size for local update in each client', type=int, default=10)
     parser.add_argument('--L', help='when to start local training round (start local model training from `floor(L * R)` round)', type=float, default=0.0)
     parser.add_argument('--eval_every', help='evaluate at every `eval_every` round', type=int, default=100)
+    parser.add_argument('--evaluate_on_holdout_clients', help='evaluate performances on hold-out clients rather than local test set of each client (if passed)', action='store_true')
     
     # optimization related arguments
     parser.add_argument('--lr', help='learning rate of each client', type=float, default=0.01)
     parser.add_argument('--lr_decay', help='magnitude of learning rate decay at every round', type=float, default=0.99)
     parser.add_argument('--mu',help='constant for regularization term (for fedprox, ditto, pfedme, superfed)', type=float, default=0.01)
-    parser.add_argument('--nu', help='constant for low-loss subspace construction term', type=float, default=1.0)
+    parser.add_argument('--nu', help='constant for low-loss subspace construction term', type=float, default=2.0)
     parser.add_argument('--tau', help='constant for fine tuning head or updating a local model (for fedrep, ditto)', type=int, default=5)
     parser.add_argument('--apfl_constant', help='constant for mixing models (for apfl)', type=float, default=0.25)
     

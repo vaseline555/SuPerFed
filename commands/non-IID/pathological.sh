@@ -309,22 +309,22 @@ python3 main.py --exp_name apfl_cifar10_patho_500 --tb_port 6663 \
 --eval_every 200
 
 # pFedMe
-python3 main.py --exp_name apfl_cifar10_patho_50 --tb_port 6667 \
+python3 main.py --exp_name pfedme_cifar10_patho_50 --tb_port 6667 \
 --dataset CIFAR10 --is_small --in_channels 3 --num_classes 10 \
 --algorithm apfl --model_name TwoCNN --fc_type LinesLinear --conv_type LinesConv \
---C 0.1 --K 50 --R 200 --E 5 --B 10 \
+--C 0.1 --K 50 --R 200 --E 5 --B 10 --mu 15 \
 --split_type pathological --shard_size 500 \
 --eval_every 200
-python3 main.py --exp_name apfl_cifar10_patho_100 --tb_port 6668 \
+python3 main.py --exp_name pfedme_cifar10_patho_100 --tb_port 6668 \
 --dataset CIFAR10 --is_small --in_channels 3 --num_classes 10 \
 --algorithm apfl --model_name TwoCNN --fc_type LinesLinear --conv_type LinesConv \
---C 0.05 --K 100 --R 200 --E 5 --B 10 \
+--C 0.05 --K 100 --R 200 --E 5 --B 10 --mu 15 \
 --split_type pathological --shard_size 250 \
 --eval_every 200
-python3 main.py --exp_name apfl_cifar10_patho_500 --tb_port 6669 \
+python3 main.py --exp_name pfedme_cifar10_patho_500 --tb_port 6669 \
 --dataset CIFAR10 --is_small --in_channels 3 --num_classes 10 \
 --algorithm apfl --model_name TwoCNN --fc_type LinesLinear --conv_type LinesConv \
---C 0.01 --K 500 --R 200 --E 5 --B 10 \
+--C 0.01 --K 500 --R 200 --E 5 --B 10 --mu 15  \
 --split_type pathological --shard_size 50 \
 --eval_every 200
 

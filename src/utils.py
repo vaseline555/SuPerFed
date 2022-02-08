@@ -201,11 +201,11 @@ def get_dataset(args):
         client datasets: [tuple(local_training_set[indices_1], local_test_set[indices_1]), tuple(local_training_set[indices_2], local_test_set[indices_2]), ...]
     """
     def construct_dataset(indices):
-            subset = torch.utils.data.Subset(raw_train, indices)
-            test_size = int(len(subset) * args.test_fraction)
-            return (torch.utils.data.random_split(subset, [len(subset) - test_size, test_size]))
+        subset = torch.utils.data.Subset(raw_train, indices)
+        test_size = int(len(subset) * args.test_fraction)
+        return (torch.utils.data.random_split(subset, [len(subset) - test_size, test_size]))
     
-    if args.dataset in ['MNIST', 'CIFAR10', 'CIFAR100']:
+    if args.dataset in ['MNIST', 'KMNIST', 'CIFAR10', 'CIFAR100']:
         # call raw datasets
         raw_train = torchvision.datasets.__dict__[args.dataset](
             root=args.data_path, 
@@ -215,7 +215,7 @@ def get_dataset(args):
                     torchvision.transforms.Resize(28), 
                     torchvision.transforms.ToTensor()
                 ]
-            ) if 'CIFAR' in args.dataset else torchvision.transforms.ToTensor(), 
+            ) if 'MNIST' not in args.dataset else torchvision.transforms.ToTensor(), 
             download=True
         )
         raw_test = torchvision.datasets.__dict__[args.dataset](
@@ -226,7 +226,7 @@ def get_dataset(args):
                     torchvision.transforms.Resize(28), 
                     torchvision.transforms.ToTensor()
                 ]
-            ) if 'CIFAR' in args.dataset else torchvision.transforms.ToTensor(), 
+            ) if 'MNIST' not in args.dataset else torchvision.transforms.ToTensor(), 
             download=True
         )
         if args.label_noise:
@@ -238,7 +238,103 @@ def get_dataset(args):
                         torchvision.transforms.Resize(28), 
                         torchvision.transforms.ToTensor()
                     ]
-                ) if 'CIFAR' in args.dataset else torchvision.transforms.ToTensor()
+                ) if 'MNIST' not in args.dataset else torchvision.transforms.ToTensor()
+            )
+        
+        # get split indices
+        split_map = split_data(args, raw_train)
+
+        # construct client datasets
+        with pool.ThreadPool(processes=args.n_jobs) as workhorse:
+            client_datasets = workhorse.map(construct_dataset, tqdm(split_map.values(), desc=f'[INFO] ...create datasets [{args.dataset}]!'))
+        return split_map, raw_test, client_datasets
+    
+    elif args.dataset in ['SVHN']:
+        # call raw datasets
+        raw_train = torchvision.datasets.__dict__[args.dataset](
+            root=args.data_path, 
+            split='train', 
+            transform=torchvision.transforms.Compose(
+                [
+                    torchvision.transforms.Resize(28), 
+                    torchvision.transforms.ToTensor()
+                ]
+            ), 
+            download=True
+        )
+        raw_test = torchvision.datasets.__dict__[args.dataset](
+            root=args.data_path, 
+            split='test', 
+            transform=torchvision.transforms.Compose(
+                [
+                    torchvision.transforms.Resize(28), 
+                    torchvision.transforms.ToTensor()
+                ]
+            ), 
+            download=True
+        )
+        
+        setattr(raw_train, 'targets', raw_train.labels)
+        setattr(raw_test, 'targets', raw_test.labels)
+
+        if args.label_noise:
+            raw_train = LabelNoiseDataset(
+                args,
+                dataset=raw_train,
+                transform=torchvision.transforms.Compose(
+                    [
+                        torchvision.transforms.Resize(28), 
+                        torchvision.transforms.ToTensor()
+                    ]
+                )
+            )
+        
+        # get split indices
+        split_map = split_data(args, raw_train)
+
+        # construct client datasets
+        with pool.ThreadPool(processes=args.n_jobs) as workhorse:
+            client_datasets = workhorse.map(construct_dataset, tqdm(split_map.values(), desc=f'[INFO] ...create datasets [{args.dataset}]!'))
+        return split_map, raw_test, client_datasets
+    
+    elif args.dataset in ['Places365']:
+        # call raw datasets
+        raw_train = torchvision.datasets.__dict__[args.dataset](
+            root=args.data_path, 
+            split='train-standard', 
+            transform=torchvision.transforms.Compose(
+                [
+                    torchvision.transforms.Resize(64), 
+                    torchvision.transforms.ToTensor()
+                ]
+            ), 
+            download=True
+        )
+        raw_test = torchvision.datasets.__dict__[args.dataset](
+            root=args.data_path, 
+            split='val', 
+            transform=torchvision.transforms.Compose(
+                [
+                    torchvision.transforms.Resize(64), 
+                    torchvision.transforms.ToTensor()
+                ]
+            ), 
+            download=True
+        )
+        
+        setattr(raw_train, 'targets', raw_train.target)
+        setattr(raw_test, 'targets', raw_test.target)
+
+        if args.label_noise:
+            raw_train = LabelNoiseDataset(
+                args,
+                dataset=raw_train,
+                transform=torchvision.transforms.Compose(
+                    [
+                        torchvision.transforms.Resize(28), 
+                        torchvision.transforms.ToTensor()
+                    ]
+                )
             )
         
         # get split indices
@@ -376,12 +472,12 @@ def initiate_model(model, args):
     cuda_string = 'cuda' if args.device_ids == [] else f'cuda:{args.device_ids[0]}'
     device = cuda_string if torch.cuda.is_available() else 'cpu'
     
-    ## GPU setting
-    #if ('cuda' in device) and (torch.cuda.device_count() > 1):
-    #    if args.device_ids == []:
-    #        model = torch.nn.DataParallel(model, device_ids=[i for i in range(torch.cuda.device_count())])
-    #    else:
-    #        model = torch.nn.DataParallel(model, device_ids=args.device_ids)
+    # GPU setting; though `torch.nn.DataParallel` is NOT recommended now...
+    if ('cuda' in device) and (torch.cuda.device_count() > 1):
+        if args.device_ids == []:
+            model = torch.nn.DataParallel(model, device_ids=[i for i in range(torch.cuda.device_count())])
+        else:
+            model = torch.nn.DataParallel(model, device_ids=args.device_ids)
     model.to(device)
 
 

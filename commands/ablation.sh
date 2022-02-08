@@ -1,113 +1,72 @@
-### Set port number properly!!!
+# SuPerFed-MM
+python3 main.py --exp_name superfed-mm_0 --tb_port 1 \
+--dataset MNIST --is_small --in_channels 1 --num_classes 10 \
+--algorithm superfed-mm --model_name TwoNN --fc_type LinesLinear \
+--C 0.01 --K 500 --R 200 --E 5 --B 10 \
+--split_type pathological --shard_size 60 --nu 0 \
+--eval_every 200
 
-# mu 0 beta 0
-python3 ../main.py MM_m0b0 \
---global_seed 5959 --device cuda --dataset CIFAR10 --iid 0 --num_shards 200 \
---C 0.1 --K 100 --R 100 --E 10 --B 20 --L 0.4 --mu 0.0 --beta 0.0 \
---init_seed 595959 525252 \
---model_name CIFARConvNet --in_channels 3 --num_classes 10 --tb_port 12594 &
+python3 main.py --exp_name superfed-mm_01 --tb_port 1 \
+--dataset MNIST --is_small --in_channels 1 --num_classes 10 \
+--algorithm superfed-mm --model_name TwoNN --fc_type LinesLinear \
+--C 0.01 --K 500 --R 200 --E 5 --B 10 \
+--split_type pathological --shard_size 60 --nu 0.1\
+--eval_every 200
 
-# mu 0 beta 1
-python3 ../main.py MM_m0b1 \
---global_seed 5959 --device cuda --dataset CIFAR10 --iid 0 --num_shards 200 \
---C 0.1 --K 100 --R 100 --E 10 --B 20 --L 0.4 --mu 0.0 --beta 1.0 \
---init_seed 595959 525252 \
---model_name CIFARConvNet --in_channels 3 --num_classes 10 --tb_port 12595 &
+python3 main.py --exp_name superfed-mm_1 --tb_port 1 \
+--dataset MNIST --is_small --in_channels 1 --num_classes 10 \
+--algorithm superfed-mm --model_name TwoNN --fc_type LinesLinear \
+--C 0.01 --K 500 --R 200 --E 5 --B 10 \
+--split_type pathological --shard_size 60 --nu 1 \
+--eval_every 200
 
-# mu 0 beta 2
-python3 ../main.py MM_m0b2 \
---global_seed 5959 --device cuda --dataset CIFAR10 --iid 0 --num_shards 200 \
---C 0.1 --K 100 --R 100 --E 10 --B 20 --L 0.4 --mu 0.0 --beta 2.0 \
---init_seed 595959 525252 \
---model_name CIFARConvNet --in_channels 3 --num_classes 10 --tb_port 12596 &
+python3 main.py --exp_name superfed-mm_2 --tb_port 1 \
+--dataset MNIST --is_small --in_channels 1 --num_classes 10 \
+--algorithm superfed-mm --model_name TwoNN --fc_type LinesLinear \
+--C 0.01 --K 500 --R 200 --E 5 --B 10 \
+--split_type pathological --shard_size 60 --nu 2 \
+--eval_every 200
 
-# mu 0 beta 5
-python3 ../main.py MM_m0b5 \
---global_seed 5959 --device cuda --dataset CIFAR10 --iid 0 --num_shards 200 \
---C 0.1 --K 100 --R 100 --E 10 --B 20 --L 0.4 --mu 0 --beta 5.0 \
---init_seed 595959 525252 \
---model_name CIFARConvNet --in_channels 3 --num_classes 10 --tb_port 12597 &
+python3 main.py --exp_name superfed-mm_5 --tb_port 1 \
+--dataset MNIST --is_small --in_channels 1 --num_classes 10 \
+--algorithm superfed-mm --model_name TwoNN --fc_type LinesLinear \
+--C 0.01 --K 500 --R 200 --E 5 --B 10 \
+--split_type pathological --shard_size 60 --nu 5 \
+--eval_every 200
 
-# mu 0.01 beta 0
-python3 ../main.py MM_m001b0 \
---global_seed 5959 --device cuda --dataset CIFAR10 --iid 0 --num_shards 200 \
---C 0.1 --K 100 --R 100 --E 10 --B 20 --L 0.4 --mu 0.01 --beta 0.0 \
---init_seed 595959 525252 \
---model_name CIFARConvNet --in_channels 3 --num_classes 10 --tb_port 12598 &
 
-# mu 0.01 beta 1
-python3 ../main.py MM_m001b1 \
---global_seed 5959 --device cuda --dataset CIFAR10 --iid 0 --num_shards 200 \
---C 0.1 --K 100 --R 100 --E 10 --B 20 --L 0.4 --mu 0.01 --beta 1.0 \
---init_seed 595959 525252 \
---model_name CIFARConvNet --in_channels 3 --num_classes 10 --tb_port 12599 &
+# SuPerFed-LM
+python3 main.py --exp_name superfed-lm_0 --tb_port 1 \
+--dataset MNIST --is_small --in_channels 1 --num_classes 10 \
+--algorithm superfed-lm --model_name TwoNN --fc_type LinesLinear \
+--C 0.01 --K 500 --R 200 --E 5 --B 10 \
+--split_type pathological --shard_size 60 --nu 0 \
+--eval_every 200
 
-# mu 0.01 beta 2
-python3 ../main.py MM_m001b2 \
---global_seed 5959 --device cuda --dataset CIFAR10 --iid 0 --num_shards 200 \
---C 0.1 --K 100 --R 100 --E 10 --B 20 --L 0.4 --mu 0.01 --beta 2.0 \
---init_seed 595959 525252 \
---model_name CIFARConvNet --in_channels 3 --num_classes 10 --tb_port 12600 &
+python3 main.py --exp_name superfed-lm_01 --tb_port 1 \
+--dataset MNIST --is_small --in_channels 1 --num_classes 10 \
+--algorithm superfed-lm --model_name TwoNN --fc_type LinesLinear \
+--C 0.01 --K 500 --R 200 --E 5 --B 10 \
+--split_type pathological --shard_size 60 --nu 0.1\
+--eval_every 200
 
-# mu 0.01 beta 5
-python3 ../main.py MM_m001b5 \
---global_seed 5959 --device cuda --dataset CIFAR10 --iid 0 --num_shards 200 \
---C 0.1 --K 100 --R 100 --E 10 --B 20 --L 0.4 --mu 0.01 --beta 5.0 \
---init_seed 595959 525252 \
---model_name CIFARConvNet --in_channels 3 --num_classes 10 --tb_port 12601 &
+python3 main.py --exp_name superfed-lm_1 --tb_port 1 \
+--dataset MNIST --is_small --in_channels 1 --num_classes 10 \
+--algorithm superfed-lm --model_name TwoNN --fc_type LinesLinear \
+--C 0.01 --K 500 --R 200 --E 5 --B 10 \
+--split_type pathological --shard_size 60 --nu 1 \
+--eval_every 200
 
-# mu 0.1 beta 0
-python3 ../main.py MM_m01b0 \
---global_seed 5959 --device cuda --dataset CIFAR10 --iid 0 --num_shards 200 \
---C 0.1 --K 100 --R 100 --E 10 --B 20 --L 0.4 --mu 0.1 --beta 0.0 \
---init_seed 595959 525252 \
---model_name CIFARConvNet --in_channels 3 --num_classes 10 --tb_port 12602 &
+python3 main.py --exp_name superfed-lm_2 --tb_port 1 \
+--dataset MNIST --is_small --in_channels 1 --num_classes 10 \
+--algorithm superfed-lm --model_name TwoNN --fc_type LinesLinear \
+--C 0.01 --K 500 --R 200 --E 5 --B 10 \
+--split_type pathological --shard_size 60 --nu 2 \
+--eval_every 200
 
-# mu 0.1 beta 1
-python3 ../main.py MM_m01b1 \
---global_seed 5959 --device cuda --dataset CIFAR10 --iid 0 --num_shards 200 \
---C 0.1 --K 100 --R 100 --E 10 --B 20 --L 0.4 --mu 0.1 --beta 1.0 \
---init_seed 595959 525252 \
---model_name CIFARConvNet --in_channels 3 --num_classes 10 --tb_port 12603 &
-
-# mu 0.1 beta 2
-python3 ../main.py MM_m01b2 \
---global_seed 5959 --device cuda --dataset CIFAR10 --iid 0 --num_shards 200 \
---C 0.1 --K 100 --R 100 --E 10 --B 20 --L 0.4 --mu 0.1 --beta 2.0 \
---init_seed 595959 525252 \
---model_name CIFARConvNet --in_channels 3 --num_classes 10 --tb_port 12604 &
-
-# mu 0.1 beta 5
-python3 ../main.py MM_m01b5 \
---global_seed 5959 --device cuda --dataset CIFAR10 --iid 0 --num_shards 200 \
---C 0.1 --K 100 --R 100 --E 10 --B 20 --L 0.4 --mu 0.1 --beta 5.0 \
---init_seed 595959 525252 \
---model_name CIFARConvNet --in_channels 3 --num_classes 10 --tb_port 12605 &
-
-# mu 1 beta 0 == FedProx
-python3 ../main.py MM_m1b0 \
---global_seed 5959 --device cuda --dataset CIFAR10 --iid 0 --num_shards 200 \
---C 0.1 --K 100 --R 100 --E 10 --B 20 --L 0.4 --mu 1.0 --beta 0.0 \
---init_seed 595959 525252 \
---model_name CIFARConvNet --in_channels 3 --num_classes 10 --tb_port 12606 &
-
-# mu 1 beta 1
-python3 ../main.py MM_m1b1 \
---global_seed 5959 --device cuda --dataset CIFAR10 --iid 0 --num_shards 200 \
---C 0.1 --K 100 --R 100 --E 10 --B 20 --L 0.4 --mu 1.0 --beta 1.0 \
---init_seed 595959 525252 \
---model_name CIFARConvNet --in_channels 3 --num_classes 10 --tb_port 12607 &
-
-# mu 1 beta 2
-python3 ../main.py MM_m1b2 \
---global_seed 5959 --device cuda --dataset CIFAR10 --iid 0 --num_shards 200 \
---C 0.1 --K 100 --R 100 --E 10 --B 20 --L 0.4 --mu 1.0 --beta 2.0 \
---init_seed 595959 525252 \
---model_name CIFARConvNet --in_channels 3 --num_classes 10 --tb_port 12608 &
-
-# mu 1 beta 5
-python3 ../main.py MM_m1b5 \
---global_seed 5959 --device cuda --dataset CIFAR10 --iid 0 --num_shards 200 \
---C 0.1 --K 100 --R 100 --E 10 --B 20 --L 0.4 --mu 1 --beta 5.0 \
---init_seed 595959 525252 \
---model_name CIFARConvNet --in_channels 3 --num_classes 10 --tb_port 12609 &
+python3 main.py --exp_name superfed-lm_5 --tb_port 1 \
+--dataset MNIST --is_small --in_channels 1 --num_classes 10 \
+--algorithm superfed-lm --model_name TwoNN --fc_type LinesLinear \
+--C 0.01 --K 500 --R 200 --E 5 --B 10 \
+--split_type pathological --shard_size 60 --nu 5 \
+--eval_every 200

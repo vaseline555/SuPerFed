@@ -51,11 +51,25 @@ class Server(object):
     def create_clients(self, k, training_set, test_set):
         """Initialize each client instance.
         """
-        client = Client(args=self.args, client_id=k, training_set=training_set, test_set=test_set, device=self.args.device)
-        client.model = copy.deepcopy(self.model)
-        client.optimizer = copy.deepcopy(self.optimizer)
-        client.criterion = copy.deepcopy(self.criterion)
-        client.initialize_model()
+        if self.args.evaluate_on_holdout_clients:
+            if k > int(self.num_clients * 0.9):
+                client = Client(args=self.args, client_id=k, training_set=None, test_set=torch.utils.data.ConcatDataset([training_set, test_set]), device=self.args.device)
+                client.model = copy.deepcopy(self.model)
+                client.optimizer = copy.deepcopy(self.optimizer)
+                client.criterion = copy.deepcopy(self.criterion)
+                client.initialize_model()
+            else:
+                client = Client(args=self.args, client_id=k, training_set=training_set, test_set=test_set, device=self.args.device)
+                client.model = copy.deepcopy(self.model)
+                client.optimizer = copy.deepcopy(self.optimizer)
+                client.criterion = copy.deepcopy(self.criterion)
+                client.initialize_model()
+        else:
+            client = Client(args=self.args, client_id=k, training_set=training_set, test_set=test_set, device=self.args.device)
+            client.model = copy.deepcopy(self.model)
+            client.optimizer = copy.deepcopy(self.optimizer)
+            client.criterion = copy.deepcopy(self.criterion)
+            client.initialize_model()
         return client
     
     def setup(self):
@@ -69,12 +83,13 @@ class Server(object):
             self.clients = workhorse.starmap(self.create_clients, [(k, training_set, test_set) for k, (training_set, test_set) in tqdm(enumerate(self.client_datasets), desc='[INFO] ...enroll clients to the server!')])
         del self.client_datasets; gc.collect()
         
-        # filter out clients with zero samples
-        self.clients = [client for client in self.clients if len(client) > 0]
+        # sanity check
+        self.num_clients = self.args.K = len(self.clients)
         
-        # set number of clients again
-        self.args.K = self.num_clients = len(self.clients)
-        
+        # reduce to size of participating clients if holdout evaluation
+        if self.args.evaluate_on_holdout_clients:
+            self.num_clients = int(self.num_clients * 0.9)
+
         # notice
         print(f'[INFO] ...successfully created all {str(self.num_clients)} clients!'); gc.collect()
 
@@ -238,66 +253,51 @@ class Server(object):
    
         ## notice 
         print(f'[INFO] [Round: {str(self._round).zfill(4)}] ...finished evaluation of selected clients!'); gc.collect()
-        return per_loss, per_acc1, per_acc5, per_ece, per_mce
     
     def evaluate_personalized_model(self):
         """Evaluate the personalization performance of given algorithm using all of the client-side holdout dataset.
         """
-        # 1) broadcast current global model to all clients
-        with pool.ThreadPool(processes=self.args.n_jobs) as workhorse:
-            workhorse.map(self.transmit_model, tqdm(range(self.num_clients), desc=f'[INFO] [Round: {str(self._round).zfill(4)}] ...transmit global models to ALL clients!'))
-        
-        
-        
-        # 2) evaluate baseline performance of all clients
-        with pool.ThreadPool(processes=self.args.n_jobs) as workhorse:
-            results = workhorse.map(self.evaluate_clients, tqdm(range(self.num_clients), desc=f'[INFO] [Round: {str(self._round).zfill(4)}] ...evaluate a baseline performance of ALL clients!'))
-        
-        ## record results
-        if self.algorithm in ['superfed-mm', 'superfed-lm']:
-            results_all = torch.stack([torch.stack(tensor) for tensor in results]) # args.K x 5 x 11
-            self.results, base_loss, base_acc1, base_acc5, base_ece, base_mce = record_results(self.args, self.writer, self.results, 'baseline_all', self._round, *torch.index_select(results_all, dim=2, index=results_all[:, 1, :].argmax(-1)).max(-1)[0].T)
-        else: # args.K x 5
-            self.results, base_loss, base_acc1, base_acc5, base_ece, base_mce = record_results(self.args, self.writer, self.results, 'baseline_all', self._round // self.args.eval_every, *torch.tensor(results).T)
-
-        ## notice
-        print(f'[INFO] [Round: {str(self._round).zfill(4)}] ...finished baseline evaluation of ALL clients!'); gc.collect()
-        
-        
-        
-        # 3) update all client models in a small step (i.e., one epoch)
-        with pool.ThreadPool(processes=self.args.n_jobs) as workhorse:
-            workhorse.starmap(self.update_clients, [(idx, 1) for idx in trange(self.num_clients, desc=f'[INFO] [Round: {str(self._round).zfill(4)}] ...update models of ALL clients by one step!')])
-        
-        
-        
-        # 4) evaluate personalization performance of all clients
-        with pool.ThreadPool(processes=self.args.n_jobs) as workhorse:
-            results = workhorse.map(self.evaluate_clients, trange(self.num_clients, desc=f'[INFO] [Round: {str(self._round).zfill(4)}] ...evaluate a personalization performance of ALL clients!'))
-
-        ## record results
-        if self.algorithm in ['superfed-mm', 'superfed-lm']:
-            results_all = torch.stack([torch.stack(tensor) for tensor in results]) # args.K x 5 x 21
-            self.results, per_loss, per_acc1, per_acc5, per_ece, per_mce = record_results(self.args, self.writer, self.results, 'personalized_all', self._round, *results_all.mean(-1).T)
+        if self.args.evaluate_on_holdout_clients:
+            # 1) broadcast current global model to holdout clients
+            with pool.ThreadPool(processes=self.args.n_jobs) as workhorse:
+                workhorse.map(self.transmit_model, tqdm(range(self.num_clients, self.args.K), desc=f'[INFO] [Round: {str(self._round).zfill(4)}] ...transmit global models to hold-out clients!'))
             
-            # plot change dynamics of loss & metrics
-            plot_by_lambda(self.args, self._round // self.args.eval_every, results_all)
+            
+            
+            # 2) evaluate baseline performance of holdout clients
+            with pool.ThreadPool(processes=self.args.n_jobs) as workhorse:
+                results = workhorse.map(self.evaluate_clients, tqdm(range(self.num_clients, self.args.K), desc=f'[INFO] [Round: {str(self._round).zfill(4)}] ...evaluate a final performance of hold-out clients!'))
+
+            ## record results
+            if self.algorithm in ['superfed-mm', 'superfed-lm']:
+                results_all = torch.stack([torch.stack(tensor) for tensor in results])
+                self.results, base_loss, base_acc1, base_acc5, base_ece, base_mce = record_results(self.args, self.writer, self.results, 'baseline_all', self._round, *torch.index_select(results_all, dim=2, index=results_all[:, 1, :].argmax(-1)).max(-1)[0].T)
+            else: 
+                self.results, base_loss, base_acc1, base_acc5, base_ece, base_mce = record_results(self.args, self.writer, self.results, 'baseline_all', self._round // self.args.eval_every, *torch.tensor(results).T)
+
+            ## notice
+            print(f'[INFO] [Round: {str(self._round).zfill(4)}] ...finished final evaluation of ALL clients!'); gc.collect()
         else:
-            self.results, per_loss, per_acc1, per_acc5, per_ece, per_mce = record_results(self.args, self.writer, self.results, 'personalized_all', self._round // self.args.eval_every, *torch.index_select(results_all, dim=2, index=results_all[:, 1, :].argmax(-1)).max(-1)[0].T)
+            # 1) broadcast current global model to all clients
+            with pool.ThreadPool(processes=self.args.n_jobs) as workhorse:
+                workhorse.map(self.transmit_model, tqdm(range(self.num_clients), desc=f'[INFO] [Round: {str(self._round).zfill(4)}] ...transmit global models to ALL clients!'))
+
+
+
+            # 2) evaluate baseline performance of all clients
+            with pool.ThreadPool(processes=self.args.n_jobs) as workhorse:
+                results = workhorse.map(self.evaluate_clients, tqdm(range(self.num_clients), desc=f'[INFO] [Round: {str(self._round).zfill(4)}] ...evaluate a final performance of ALL clients!'))
+
+            ## record results
+            if self.algorithm in ['superfed-mm', 'superfed-lm']:
+                results_all = torch.stack([torch.stack(tensor) for tensor in results]) # args.K x 5 x 11
+                self.results, base_loss, base_acc1, base_acc5, base_ece, base_mce = record_results(self.args, self.writer, self.results, 'baseline_all', self._round, *torch.index_select(results_all, dim=2, index=results_all[:, 1, :].argmax(-1)).max(-1)[0].T)
+            else: # args.K x 5
+                self.results, base_loss, base_acc1, base_acc5, base_ece, base_mce = record_results(self.args, self.writer, self.results, 'baseline_all', self._round // self.args.eval_every, *torch.tensor(results).T)
+
+            ## notice
+            print(f'[INFO] [Round: {str(self._round).zfill(4)}] ...finished final evaluation of ALL clients!'); gc.collect()
         
-        ## notice
-        print(f'[INFO] [Round: {str(self._round).zfill(4)}] ...finished personalization evaluation of ALL clients!'); gc.collect()
-        
-        
-        
-        # 5) calculate delta metrics 
-        loss_delta = per_loss - base_loss
-        acc1_delta = per_acc1 - base_acc1
-        acc5_delta = per_acc5 - base_acc5
-        ece_delta = per_ece - base_ece
-        mce_delta = per_mce - base_mce
-        return loss_delta, acc1_delta, acc5_delta, ece_delta, mce_delta
-    
     def evaluate_global_model(self):
         """Evaluate the global model at the server using the server-side holdout dataset.
         (Possible only if the algorithm supports an exchange of whole parameters)
@@ -316,26 +316,12 @@ class Server(object):
             self._round = r + 1
             
             # do federated training and get the performance on selected clients in current rounds
-            fed_loss, fed_acc1, fed_acc5, fed_ece, fed_mce = self.train_federated_model()
+            self.train_federated_model()
             
             # evaluate personalization performance on all clients
             if (self._round % self.args.eval_every == 0) or (self._round == self.num_rounds):
-                loss_delta, acc1_delta, acc5_delta, ece_delta, mce_delta = self.evaluate_personalized_model()
+                self.evaluate_personalized_model()
 
-                # track deltas
-                self.results['loss_delta_mean'].append(loss_delta.mean().float().item()); self.results['loss_delta_std'].append(loss_delta.std(unbiased=False).float().item())
-                self.results['acc1_delta_mean'].append(acc1_delta.mean().float().item()); self.results['acc1_delta_std'].append(acc1_delta.std(unbiased=False).float().item())
-                self.results['acc5_delta_mean'].append(acc5_delta.mean().float().item()); self.results['acc5_delta_std'].append(acc5_delta.std(unbiased=False).float().item())
-                self.results['ece_delta_mean'].append(ece_delta.mean().float().item()); self.results['ece_delta_std'].append(ece_delta.std(unbiased=False).float().item())
-                self.results['mce_delta_mean'].append(mce_delta.mean().float().item()); self.results['mce_delta_std'].append(mce_delta.std(unbiased=False).float().item())
-
-                # plot histogram
-                plot_delta_histogram(self.args, self.writer, 'Loss', self._round // self.args.eval_every, loss_delta)
-                plot_delta_histogram(self.args, self.writer, 'Top 1 Accuracy', self._round // self.args.eval_every, acc1_delta)
-                plot_delta_histogram(self.args, self.writer, 'Top 5 Accuracy', self._round // self.args.eval_every, acc5_delta)
-                plot_delta_histogram(self.args, self.writer, 'Expected Calibration Error', self._round // self.args.eval_every, ece_delta)
-                plot_delta_histogram(self.args, self.writer, 'Maximum Calibration Error', self._round // self.args.eval_every, mce_delta)
-     
             # evaluate server-side model's performance using server-side holdout set if possible
             results = self.evaluate_global_model()
             
