@@ -125,7 +125,7 @@ class Server(object):
         # transmit parameters of a federated model only (alpha = 0)
         elif self.algorithm in ['ditto', 'apfl', 'pfedme', 'superfed-mm', 'superfed-lm']:
             global_model = {k: v for k, v in self.model.state_dict().items() if 'local' not in k}
-            federated_model_at_client = copy.deepcopy(self.clients[idx].model.state_dict())
+            federated_model_at_client = self.clients[idx].model.state_dict()
             federated_model_at_client.update(global_model)
             self.clients[idx].model.load_state_dict(federated_model_at_client)
     
@@ -247,7 +247,7 @@ class Server(object):
         ## record results
         if self.algorithm in ['superfed-mm', 'superfed-lm']:
             results_all = torch.stack([torch.stack(tensor) for tensor in results]) # args.K x 5 x 21
-            self.results, per_loss, per_acc1, per_acc5, per_ece, per_mce = record_results(self.args, self.writer, self.results, 'selected', self._round, *results_all.mean(-1))
+            self.results, per_loss, per_acc1, per_acc5, per_ece, per_mce = record_results(self.args, self.writer, self.results, 'selected', self._round, *torch.index_select(results_all, dim=2, index=results_all[:, 1, :].argmax(-1)).max(-1)[0].T)
         else:
             self.results, per_loss, per_acc1, per_acc5, per_ece, per_mce = record_results(self.args, self.writer, self.results, 'selected', self._round, *torch.tensor(results).T)
    

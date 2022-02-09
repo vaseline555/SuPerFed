@@ -54,9 +54,9 @@ def main(args, writer):
     
     # check if correct model is specified
     builder = Builder(args)
-    if 'ResNet' in args.model_name:
+    if 'ResNet18' in args.model_name:
         block = models.BasicBlock
-    elif 'MobileNet' in args.model_name:
+    elif 'MobileNetv2' in args.model_name:
         block = models.InvertedBlock
     else:
         block = None
@@ -101,7 +101,7 @@ if __name__ == "__main__":
     parser.add_argument('--n_jobs', help='workeres for multiprocessing', type=int, default=16)
     
     # dataset related arguments
-    parser.add_argument('--dataset', help='name of dataset to use for an experiment: [MNIST|CIFAR10|CIFAR100|TinyImageNet|FEMNIST|Shakespeare|]', type=str, choices=['MNIST', 'CIFAR10', 'CIFAR100', 'TinyImageNet', 'FEMNIST', 'Shakespeare', 'KMNIST', 'SVHN', 'Places365'], required=True)
+    parser.add_argument('--dataset', help='name of dataset to use for an experiment: [MNIST|CIFAR10|CIFAR100|TinyImageNet|FEMNIST|Shakespeare|KMNIST|SVHN|Caltech101]', type=str, choices=['MNIST', 'CIFAR10', 'CIFAR100', 'TinyImageNet', 'FEMNIST', 'Shakespeare', 'KMNIST', 'SVHN', 'Caltech101'], required=True)
     parser.add_argument('--is_small', help='indicates the size of inputs is small; only used for MobileNetv2 (if passed)', action='store_true')
     parser.add_argument('--in_channels', help='input channels for image dataset (ignored when `Shakespeare` dataset is used)', type=int, default=3)
     parser.add_argument('--num_classes', help='number of classes to predict (ignored when `Shakespeare` dataset is used)', type=int, default=10)

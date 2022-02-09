@@ -30,14 +30,14 @@ def basic_update(identifier, args, model, criterion, dataset, optimizer, lr, epo
         # track loss and metrics
         losses, acc1, acc5, ece, mce = 0, 0, 0, 0, 0
         for inputs, targets in dataloader:
-            inputs, targets = inputs.to(args.device), targets.to(args.device)
+            inputs, targets = inputs.float().to(args.device), targets.to(args.device)
 
             # inference
             outputs = model(inputs)
             loss = criterion()(outputs, targets)
 
             # update
-            optimizer.zero_grad()
+            for param in model.parameters(): param.grad = None
             loss.backward()
             optimizer.step() 
             
@@ -88,7 +88,7 @@ def fedprox_update(identifier, args, model, criterion, dataset, optimizer, lr, e
         # track loss and metrics
         losses, acc1, acc5, ece, mce = 0, 0, 0, 0, 0
         for inputs, targets in dataloader:
-            inputs, targets = inputs.to(args.device), targets.to(args.device)
+            inputs, targets = inputs.float().to(args.device), targets.to(args.device)
 
             # inference
             outputs = model(inputs)
@@ -101,7 +101,7 @@ def fedprox_update(identifier, args, model, criterion, dataset, optimizer, lr, e
             loss += args.mu * prox
             
             # update
-            optimizer.zero_grad()
+            for param in model.parameters(): param.grad = None
             loss.backward()
             optimizer.step() 
             
@@ -161,14 +161,14 @@ def fedrep_update(identifier, args, model, criterion, dataset, optimizer, lr, ep
         # track loss and metrics
         losses, acc1, acc5, ece, mce = 0, 0, 0, 0, 0
         for inputs, targets in dataloader:
-            inputs, targets = inputs.to(args.device), targets.to(args.device)
+            inputs, targets = inputs.float().to(args.device), targets.to(args.device)
 
             # inference
             outputs = model(inputs)
             loss = criterion()(outputs, targets)
 
             # update
-            head_optimizer.zero_grad()
+            for param in model.parameters(): param.grad = None
             loss.backward()
             head_optimizer.step() 
             
@@ -215,14 +215,14 @@ def fedrep_update(identifier, args, model, criterion, dataset, optimizer, lr, ep
         # track loss and metrics
         losses, acc1, acc5, ece, mce = 0, 0, 0, 0, 0
         for inputs, targets in dataloader:
-            inputs, targets = inputs.to(args.device), targets.to(args.device)
+            inputs, targets = inputs.float().to(args.device), targets.to(args.device)
 
             # inference
             outputs = model(inputs)
             loss = criterion()(outputs, targets)
 
             # update
-            body_optimizer.zero_grad()
+            for param in model.parameters(): param.grad = None
             loss.backward()
             body_optimizer.step() 
             
@@ -305,14 +305,15 @@ def apfl_update(identifier, args, model, criterion, dataset, optimizer, lr, epoc
         # track loss and metrics
         losses, acc1, acc5, ece, mce = 0, 0, 0, 0, 0
         for inputs, targets in dataloader:
-            inputs, targets = inputs.to(args.device), targets.to(args.device)
+            inputs, targets = inputs.float().to(args.device), targets.to(args.device)
 
             # inference
             outputs = model(inputs); local_outputs = personalized_model(inputs)
             global_loss = criterion()(outputs, targets); local_loss = criterion()(local_outputs, targets)
 
             # update
-            global_optimizer.zero_grad(); local_optimizer.zero_grad()
+            for param in model.parameters(): param.grad = None
+            for param in personalized_model.parameters(): param.grad = None
             global_loss.backward(); local_loss.backward()
             global_optimizer.step(); local_optimizer.step()
             
@@ -392,14 +393,14 @@ def ditto_update(identifier, args, model, criterion, dataset, optimizer, lr, epo
         # track loss and metrics
         losses, acc1, acc5, ece, mce = 0, 0, 0, 0, 0
         for inputs, targets in dataloader:
-            inputs, targets = inputs.to(args.device), targets.to(args.device)
+            inputs, targets = inputs.float().to(args.device), targets.to(args.device)
 
             # inference
             outputs = model(inputs)
             global_loss = criterion()(outputs, targets)
 
             # update
-            global_optimizer.zero_grad()
+            for param in model.parameters(): param.grad = None
             global_loss.backward()
             global_optimizer.step() 
             
@@ -445,7 +446,7 @@ def ditto_update(identifier, args, model, criterion, dataset, optimizer, lr, epo
         # track loss and metrics
         losses, acc1, acc5, ece, mce = 0, 0, 0, 0, 0
         for inputs, targets in dataloader:
-            inputs, targets = inputs.to(args.device), targets.to(args.device)
+            inputs, targets = inputs.float().to(args.device), targets.to(args.device)
 
             # inference
             outputs = model(inputs)
@@ -463,7 +464,7 @@ def ditto_update(identifier, args, model, criterion, dataset, optimizer, lr, epo
             local_loss += args.mu * prox
             
             # update
-            local_optimizer.zero_grad()
+            for param in model.parameters(): param.grad = None
             local_loss.backward()
             local_optimizer.step() 
             
@@ -521,7 +522,7 @@ def pfedme_update(identifier, args, model, criterion, dataset, optimizer, lr, ep
         # track loss and metrics
         losses, acc1, acc5, ece, mce = 0, 0, 0, 0, 0
         for inputs, targets in dataloader:
-            inputs, targets = inputs.to(args.device), targets.to(args.device)
+            inputs, targets = inputs.float().to(args.device), targets.to(args.device)
 
             # inference
             outputs = model(inputs)
@@ -539,7 +540,7 @@ def pfedme_update(identifier, args, model, criterion, dataset, optimizer, lr, ep
             loss += args.mu * prox
 
             # update
-            optimizer.zero_grad()
+            for param in model.parameters(): param.grad = None
             loss.backward()
             optimizer.step() 
 
@@ -605,7 +606,7 @@ def superfed_update(identifier, args, model, criterion, dataset, optimizer, lr, 
         # track loss and metrics
         losses, acc1, acc5, ece, mce = 0, 0, 0, 0, 0
         for inputs, targets in dataloader:
-            inputs, targets = inputs.to(args.device), targets.to(args.device)
+            inputs, targets = inputs.float().to(args.device), targets.to(args.device)
             
             if start_mix:
                 # instant model mixing according to mode
@@ -645,7 +646,7 @@ def superfed_update(identifier, args, model, criterion, dataset, optimizer, lr, 
                 loss += args.nu * cos_sim
             
             # update
-            optimizer.zero_grad()
+            for param in model.parameters(): param.grad = None
             loss.backward()
             optimizer.step() 
             
@@ -700,7 +701,7 @@ def basic_evaluate(identifier, args, model, criterion, dataset):
     # main loop
     for inputs, targets in dataloader:
         # get daata
-        inputs, targets = inputs.to(args.device), targets.to(args.device)
+        inputs, targets = inputs.float().to(args.device), targets.to(args.device)
         
         # inference
         outputs = model(inputs)
@@ -749,7 +750,7 @@ def superfed_evaluate(identifier, args, model, criterion, dataset, current_round
 
         # main loop
         for inputs, targets in dataloader:
-            inputs, targets = inputs.to(args.device), targets.to(args.device)
+            inputs, targets = inputs.float().to(args.device), targets.to(args.device)
 
             # model mixing with given value
             model.apply(partial(set_lambda, lam=lam))

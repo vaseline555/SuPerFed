@@ -150,22 +150,17 @@ class LEAFDataset(torch.utils.data.Dataset):
 
 # LEAF - FEMNIST
 class FEMNISTDataset(LEAFDataset):
-    def __init__(self, train=None, transform=torchvision.transforms.ToTensor()):
+    def __init__(self, train=None):
         super(FEMNISTDataset, self).__init__()
         self.train = train
-        self.transform = transform
-    
+
     def _make_dataset(self):
         self.inputs, self.targets = self.data['x'], self.data['y']
         
     def __getitem__(self, index):
         # get corresponding inputs & targets pair
         inputs, targets = self.inputs[index], self.targets[index]
-        inputs = PIL.Image.fromarray(np.array(inputs).reshape(28, 28), mode='L')
-        
-        # apply transformation
-        if self.transform is not None:
-            inputs = self.transform(inputs)
+        inputs = np.array(inputs).reshape(-1, 28, 28)
         return inputs, targets
     
     def __len__(self):

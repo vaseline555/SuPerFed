@@ -274,21 +274,10 @@ def get_dataset(args):
             download=True
         )
         
+        # for compatilibity
         setattr(raw_train, 'targets', raw_train.labels)
         setattr(raw_test, 'targets', raw_test.labels)
 
-        if args.label_noise:
-            raw_train = LabelNoiseDataset(
-                args,
-                dataset=raw_train,
-                transform=torchvision.transforms.Compose(
-                    [
-                        torchvision.transforms.Resize(28), 
-                        torchvision.transforms.ToTensor()
-                    ]
-                )
-            )
-        
         # get split indices
         split_map = split_data(args, raw_train)
 
@@ -297,53 +286,31 @@ def get_dataset(args):
             client_datasets = workhorse.map(construct_dataset, tqdm(split_map.values(), desc=f'[INFO] ...create datasets [{args.dataset}]!'))
         return split_map, raw_test, client_datasets
     
-    elif args.dataset in ['Places365']:
+    elif args.dataset in ['Caltech101']:
         # call raw datasets
         raw_train = torchvision.datasets.__dict__[args.dataset](
             root=args.data_path, 
-            split='train-standard', 
+            target_type='category', 
             transform=torchvision.transforms.Compose(
                 [
-                    torchvision.transforms.Resize(64), 
-                    torchvision.transforms.ToTensor()
-                ]
-            ), 
-            download=True
-        )
-        raw_test = torchvision.datasets.__dict__[args.dataset](
-            root=args.data_path, 
-            split='val', 
-            transform=torchvision.transforms.Compose(
-                [
-                    torchvision.transforms.Resize(64), 
+                    torchvision.transforms.Grayscale(num_output_channels=1),
+                    torchvision.transforms.Resize((64, 64)), 
                     torchvision.transforms.ToTensor()
                 ]
             ), 
             download=True
         )
         
-        setattr(raw_train, 'targets', raw_train.target)
-        setattr(raw_test, 'targets', raw_test.target)
+        # for compatilibity
+        setattr(raw_train, 'targets', raw_train.y)
 
-        if args.label_noise:
-            raw_train = LabelNoiseDataset(
-                args,
-                dataset=raw_train,
-                transform=torchvision.transforms.Compose(
-                    [
-                        torchvision.transforms.Resize(28), 
-                        torchvision.transforms.ToTensor()
-                    ]
-                )
-            )
-        
         # get split indices
         split_map = split_data(args, raw_train)
 
         # construct client datasets
         with pool.ThreadPool(processes=args.n_jobs) as workhorse:
             client_datasets = workhorse.map(construct_dataset, tqdm(split_map.values(), desc=f'[INFO] ...create datasets [{args.dataset}]!'))
-        return split_map, raw_test, client_datasets
+        return split_map, None, client_datasets
     
     elif args.dataset == 'TinyImageNet':
         # call raw dataset
