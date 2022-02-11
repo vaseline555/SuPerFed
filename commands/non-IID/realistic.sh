@@ -5,57 +5,89 @@
 python3 main.py --exp_name _femnist --tb_port  \
 --dataset FEMNIST --is_small --in_channels 1 --num_classes 62 \
 --algorithm  --model_name VGG9 \
---C 0.007 --R 1000 --E 5 --B 10 --lr 0.001 \
+--C 0.007 --R 500 --E 5 --B 10 --lr 0.01 \
 --split_type realistic \
---eval_every 1000
+--eval_every 100 &
 
 # FedAvg
 python3 main.py --exp_name fedavg_femnist --tb_port 11 \
 --dataset FEMNIST --is_small --in_channels 1 --num_classes 62 \
 --algorithm fedavg --model_name VGG9 \
---C 0.007 --R 500 --E 5 --B 10 --lr 0.001  \
+--C 0.007 --R 500 --E 5 --B 10 --lr 0.01  \
 --split_type realistic \
---eval_every 500
+--eval_every 500 &
 
 # FedProx
 python3 main.py --exp_name fedprox_femnist --tb_port 12 \
 --dataset FEMNIST --is_small --in_channels 1 --num_classes 62 \
 --algorithm fedprox --model_name VGG9 \
---C 0.007 --R 500 --E 5 --B 10 --lr 0.001  \
+--C 0.007 --R 500 --E 5 --B 10 --lr 0.01  \
 --split_type realistic \
---eval_every 500
+--eval_every 500 &
 
 # LG-FedAvg
 python3 main.py --exp_name lg-fedavg_femnist --tb_port 13 \
 --dataset FEMNIST --is_small --in_channels 1 --num_classes 62 \
 --algorithm lg-fedavg --model_name VGG9 \
---C 0.007 --R 500 --E 5 --B 10 --lr 0.001  \
+--C 0.007 --R 500 --E 5 --B 10 --lr 0.01  \
 --split_type realistic \
---eval_every 500
+--eval_every 500 &
 
 # FedPer
 python3 main.py --exp_name fedper_femnist --tb_port 14 \
 --dataset FEMNIST --is_small --in_channels 1 --num_classes 62 \
 --algorithm fedper --model_name VGG9 \
---C 0.007 --R 500 --E 5 --B 10 --lr 0.001  \
+--C 0.007 --R 500 --E 5 --B 10 --lr 0.01  \
 --split_type realistic \
---eval_every 500
+--eval_every 500 &
+
+# APFL
+python3 main.py --exp_name apfl_femnist --tb_port 2222 \
+--dataset FEMNIST --is_small --in_channels 1 --num_classes 62 \
+--algorithm apfl --model_name VGG9 --fc_type LinesLinear --bn_type LinesBN --conv_type LinesConv \
+--C 0.007 --R 500 --E 5 --B 10 --lr 0.01 \
+--split_type realistic \
+--eval_every 500 &
+
+# pFedMe
+python3 main.py --exp_name pfedme_femnist --tb_port 2222 \
+--dataset FEMNIST --is_small --in_channels 1 --num_classes 62 \
+--algorithm pfedme --model_name VGG9 --fc_type LinesLinear --bn_type LinesBN --conv_type LinesConv \
+--C 0.007 --R 500 --E 5 --B 10 --lr 0.01 --mu 15 \
+--split_type realistic \
+--eval_every 500 &
+
+# Ditto
+python3 main.py --exp_name ditto_femnist --tb_port 2222 \
+--dataset FEMNIST --is_small --in_channels 1 --num_classes 62 \
+--algorithm ditto --model_name VGG9 --fc_type LinesLinear --bn_type LinesBN --conv_type LinesConv \
+--C 0.007 --R 500 --E 5 --B 10 --lr 0.01 \
+--split_type realistic \
+--eval_every 500 &
+
+# FedRep
+python3 main.py --exp_name fedrep_femnist --tb_port 2222 \
+--dataset FEMNIST --is_small --in_channels 1 --num_classes 62 \
+--algorithm fedrep --model_name VGG9 \
+--C 0.007 --R 500 --E 5 --B 10 --lr 0.01 \
+--split_type realistic \
+--eval_every 500 &
 
 # SuPerFed-MM
 python3 main.py --exp_name superfed-mm_femnist --tb_port 6666 \
 --dataset FEMNIST --is_small --in_channels 1 --num_classes 62 \
 --algorithm superfed-mm --model_name VGG9 --fc_type LinesLinear --bn_type LinesBN --conv_type LinesConv \
---C 0.007 --R 500 --E 5 --B 10 --lr 0.001  \
+--C 0.007 --R 100 --E 5 --B 10 --lr 0.01 --nu 0.5 --mu 0 \
 --split_type realistic \
---eval_every 500
+--eval_every 100
 
 # SuPerFed-LM
 python3 main.py --exp_name superfed-lm_femnist --tb_port 6667 \
 --dataset FEMNIST --is_small --in_channels 1 --num_classes 62 \
 --algorithm superfed-lm --model_name VGG9 --fc_type LinesLinear --bn_type LinesBN --conv_type LinesConv \
---C 0.007 --R 500 --E 5 --B 10 --lr 0.001  \
+--C 0.007 --R 100 --E 5 --B 10 --lr 0.01 --nu 0.5 --mu 0 \
 --split_type realistic \
---eval_every 500
+--eval_every 100
 
 
 ###############

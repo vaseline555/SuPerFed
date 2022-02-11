@@ -10,7 +10,7 @@ from multiprocessing import pool
 
 from .client import Client
 from .algorithm import *
-from .utils import record_results, plot_delta_histogram, plot_by_lambda
+from .utils import record_results, plot_by_lambda
 
 
 
@@ -292,12 +292,13 @@ class Server(object):
             if self.algorithm in ['superfed-mm', 'superfed-lm']:
                 results_all = torch.stack([torch.stack(tensor) for tensor in results]) # args.K x 5 x 11
                 self.results, base_loss, base_acc1, base_acc5, base_ece, base_mce = record_results(self.args, self.writer, self.results, 'baseline_all', self._round, *torch.index_select(results_all, dim=2, index=results_all[:, 1, :].argmax(-1)).max(-1)[0].T)
+                plot_by_lambda(self.args, self._round // self.args.eval_every, results_all)
             else: # args.K x 5
                 self.results, base_loss, base_acc1, base_acc5, base_ece, base_mce = record_results(self.args, self.writer, self.results, 'baseline_all', self._round // self.args.eval_every, *torch.tensor(results).T)
 
             ## notice
             print(f'[INFO] [Round: {str(self._round).zfill(4)}] ...finished final evaluation of ALL clients!'); gc.collect()
-        
+            
     def evaluate_global_model(self):
         """Evaluate the global model at the server using the server-side holdout dataset.
         (Possible only if the algorithm supports an exchange of whole parameters)
@@ -323,9 +324,9 @@ class Server(object):
                 self.evaluate_personalized_model()
 
             # evaluate server-side model's performance using server-side holdout set if possible
-            results = self.evaluate_global_model()
+            #results = self.evaluate_global_model()
             
             # record server-side performance if possible
-            if results is not None:
-                self.results = record_results(self.args, self.writer, self.results, 'server', self._round, *torch.tensor(results).T)[0]
+            #if results is not None:
+            #    self.results = record_results(self.args, self.writer, self.results, 'server', self._round, *torch.tensor(results).T)[0]
             

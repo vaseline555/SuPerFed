@@ -316,23 +316,15 @@ def get_dataset(args):
         # call raw dataset
         raw_train = TinyImageNetDataset(
             args, 
-            train=True, 
-            transform=torchvision.transforms.Compose(
-                [
-                    torchvision.transforms.Resize(64), 
-                    torchvision.transforms.ToTensor()
-                ]
-            )
+            split='train',
+            download=True,
+            transform=torchvision.transforms.ToTensor()
         )
         raw_test = TinyImageNetDataset(
             args, 
-            train=False, 
-            transform=torchvision.transforms.Compose(
-                [
-                    torchvision.transforms.Resize(64), 
-                    torchvision.transforms.ToTensor()
-                ]
-            )
+            split='val',
+            download=True,
+            transform=torchvision.transforms.ToTensor()
         )
         
         # get split indices
@@ -468,7 +460,7 @@ def set_lambda(module, lam, layerwise=False):
         or isinstance(module, torch.nn.Embedding)
     ):
         if layerwise:
-            lam = np.random.uniform(0.0, 1.0)
+            lam = np.random.uniform(0.5, 1.0)
         setattr(module, 'lam', lam)
 
             
@@ -620,30 +612,6 @@ def record_results(args, writer, container, mode, step, loss, acc1, acc5, ece, m
     )
     return container, loss, acc1, acc5, ece, mce
 
-
-
-######################
-# Plot delta metrics #
-######################
-def plot_delta_histogram(args, writer, mode, step, delta):
-    color_map = {'Loss': 'b', 'Top 1 Accuracy': 'g', 'Top 5 Accuracy': 'r', 'Expected Calibration Error': 'c', 'Maximum Calibration Error': 'm'}
-    
-    # make figure
-    fig, ax = plt.subplots(figsize=(6, 3))
-    ax.hist(delta.view(1, -1), color=color_map[mode])
-    ax.set_title(f'Delta Histogram of {mode}')
-    
-    # record
-    writer.add_figure(
-        f'Histogram_{mode}',
-        fig,
-        step,
-        close=True
-    )
-    
-    # save
-    fig.savefig(f'./{args.plot_path}/{args.exp_name}/delta_histogram_{mode}_{str(int(step * args.eval_every)).zfill(4)}.png')
-    np.save(f'./{args.plot_path}/{args.exp_name}/delta_{mode}_{str(int(step * args.eval_every)).zfill(4)}', np.array(delta))
     
     
 ##################################
@@ -659,11 +627,11 @@ def plot_by_lambda(args, step, results):
     # make figure
     fig, ax = plt.subplots(nrows=1, ncols=5, figsize=(15, 3))
     plt.xticks(np.arange(0.0, 1.1, 0.1))
-    ax[0].errorbar(torch.arange(0.0, 1.1, 0.1), mean[0], yerr=std[0], color='c'); ax[0].set_title('Loss'); ax[0].set_xlabel(r'$\lambda$')
-    ax[1].errorbar(torch.arange(0.0, 1.1, 0.1), mean[1], yerr=std[1], color='m'); ax[1].set_title('Top 1 Accuracy'); ax[0].set_xlabel(r'$\lambda$')
-    ax[2].errorbar(torch.arange(0.0, 1.1, 0.1), mean[2], yerr=std[2], color='y'); ax[2].set_title('Top 5 Accuracy'); ax[0].set_xlabel(r'$\lambda$')
-    ax[3].errorbar(torch.arange(0.0, 1.1, 0.1), mean[3], yerr=std[3], color='b'); ax[3].set_title('Exepcted Calibration Error'); ax[0].set_xlabel(r'$\lambda$')
-    ax[4].errorbar(torch.arange(0.0, 1.1, 0.1), mean[4], yerr=std[4], color='k'); ax[4].set_title('Maximum Calibration Error'); ax[0].set_xlabel(r'$\lambda$')
+    ax[0].errorbar(torch.arange(0.0, 1.1, 0.1), mean[0], yerr=std[0], color='c', capsize=5); ax[0].set_title('Loss'); ax[0].set_xlabel(r'$\lambda$')
+    ax[1].errorbar(torch.arange(0.0, 1.1, 0.1), mean[1], yerr=std[1], color='m', capsize=5); ax[1].set_title('Top 1 Accuracy'); ax[1].set_xlabel(r'$\lambda$'); ax[1].set_ylim(-0.1, 1.1)
+    ax[2].errorbar(torch.arange(0.0, 1.1, 0.1), mean[2], yerr=std[2], color='y', capsize=5); ax[2].set_title('Top 5 Accuracy'); ax[2].set_xlabel(r'$\lambda$'); ax[2].set_ylim(-0.1, 1.1)
+    ax[3].errorbar(torch.arange(0.0, 1.1, 0.1), mean[3], yerr=std[3], color='b', capsize=5); ax[3].set_title('Exepcted Calibration Error'); ax[3].set_xlabel(r'$\lambda$')
+    ax[4].errorbar(torch.arange(0.0, 1.1, 0.1), mean[4], yerr=std[4], color='k', capsize=5); ax[4].set_title('Maximum Calibration Error'); ax[4].set_xlabel(r'$\lambda$')
     plt.tight_layout()
 
     # save

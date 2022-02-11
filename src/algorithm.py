@@ -1,4 +1,3 @@
-import gc
 import copy
 import torch
 import numpy as np
@@ -30,7 +29,7 @@ def basic_update(identifier, args, model, criterion, dataset, optimizer, lr, epo
         # track loss and metrics
         losses, acc1, acc5, ece, mce = 0, 0, 0, 0, 0
         for inputs, targets in dataloader:
-            inputs, targets = inputs.float().to(args.device), targets.to(args.device)
+            inputs, targets = inputs.to(args.device), targets.to(args.device)
 
             # inference
             outputs = model(inputs)
@@ -53,7 +52,7 @@ def basic_update(identifier, args, model, criterion, dataset, optimizer, lr, epo
             ece += ces[0].item(); mce += ces[-1].item()
 
             # clear cache
-            if 'cuda' in args.device: torch.cuda.empty_cache(); gc.collect()
+            if 'cuda' in args.device: torch.cuda.empty_cache()
         else:
             # get losses & metrics
             losses /= len(dataloader)
@@ -88,7 +87,7 @@ def fedprox_update(identifier, args, model, criterion, dataset, optimizer, lr, e
         # track loss and metrics
         losses, acc1, acc5, ece, mce = 0, 0, 0, 0, 0
         for inputs, targets in dataloader:
-            inputs, targets = inputs.float().to(args.device), targets.to(args.device)
+            inputs, targets = inputs.to(args.device), targets.to(args.device)
 
             # inference
             outputs = model(inputs)
@@ -161,7 +160,7 @@ def fedrep_update(identifier, args, model, criterion, dataset, optimizer, lr, ep
         # track loss and metrics
         losses, acc1, acc5, ece, mce = 0, 0, 0, 0, 0
         for inputs, targets in dataloader:
-            inputs, targets = inputs.float().to(args.device), targets.to(args.device)
+            inputs, targets = inputs.to(args.device), targets.to(args.device)
 
             # inference
             outputs = model(inputs)
@@ -194,7 +193,7 @@ def fedrep_update(identifier, args, model, criterion, dataset, optimizer, lr, ep
             mce /= len(dataloader)
             print(f'\t[TRAINING - CLIENT ({str(identifier).zfill(4)})] [HEAD EPOCH: {str(e).zfill(2)}] Loss: {losses:.4f}, Top1 Acc.: {acc1:.4f}, Top5 Acc.: {acc5:.4f}, ECE: {ece:.4f}, MCE: {mce:.4f}')
     else:
-        del head_optimizer; gc.collect()
+        del head_optimizer
         
     # then, update the body
     for name, parameter in model.named_parameters():
@@ -215,7 +214,7 @@ def fedrep_update(identifier, args, model, criterion, dataset, optimizer, lr, ep
         # track loss and metrics
         losses, acc1, acc5, ece, mce = 0, 0, 0, 0, 0
         for inputs, targets in dataloader:
-            inputs, targets = inputs.float().to(args.device), targets.to(args.device)
+            inputs, targets = inputs.to(args.device), targets.to(args.device)
 
             # inference
             outputs = model(inputs)
@@ -305,7 +304,7 @@ def apfl_update(identifier, args, model, criterion, dataset, optimizer, lr, epoc
         # track loss and metrics
         losses, acc1, acc5, ece, mce = 0, 0, 0, 0, 0
         for inputs, targets in dataloader:
-            inputs, targets = inputs.float().to(args.device), targets.to(args.device)
+            inputs, targets = inputs.to(args.device), targets.to(args.device)
 
             # inference
             outputs = model(inputs); local_outputs = personalized_model(inputs)
@@ -330,7 +329,6 @@ def apfl_update(identifier, args, model, criterion, dataset, optimizer, lr, epoc
                 
                 temp_model.apply(partial(set_lambda, lam=args.apfl_constant))
                 outputs = temp_model(inputs)
-                del temp_model; gc.collect()
                 
             # get accuracy
             accs = get_accuracy(outputs, targets, (1, 5))
@@ -351,15 +349,11 @@ def apfl_update(identifier, args, model, criterion, dataset, optimizer, lr, epoc
             mce /= len(dataloader)
             print(f'\t[TRAINING - CLIENT ({str(identifier).zfill(4)})] [EPOCH: {str(e).zfill(2)}] Loss: {losses:.4f}, Top1 Acc.: {acc1:.4f}, Top5 Acc.: {acc5:.4f}, ECE: {ece:.4f}, MCE: {mce:.4f}')
     else:
-        del global_optimizer, local_optimizer; gc.collect()
-        
         # merge updated local model with updated global model 
         local_updated = {k: v for k, v in personalized_model.state_dict().items() if 'local' in k}
         global_updated = model.state_dict()
         global_updated.update(local_updated)
         model.load_state_dict(global_updated)
-        del personalized_model, local_updated, global_updated; gc.collect()
-        
         model = model.to('cpu')
 
 
@@ -393,7 +387,7 @@ def ditto_update(identifier, args, model, criterion, dataset, optimizer, lr, epo
         # track loss and metrics
         losses, acc1, acc5, ece, mce = 0, 0, 0, 0, 0
         for inputs, targets in dataloader:
-            inputs, targets = inputs.float().to(args.device), targets.to(args.device)
+            inputs, targets = inputs.to(args.device), targets.to(args.device)
 
             # inference
             outputs = model(inputs)
@@ -425,8 +419,6 @@ def ditto_update(identifier, args, model, criterion, dataset, optimizer, lr, epo
             ece /= len(dataloader)
             mce /= len(dataloader)
             print(f'\t[TRAINING - CLIENT ({str(identifier).zfill(4)})] [GLOBAL MODEL EPOCH: {str(e).zfill(2)}] Loss: {losses:.4f}, Top1 Acc.: {acc1:.4f}, Top5 Acc.: {acc5:.4f}, ECE: {ece:.4f}, MCE: {mce:.4f}')
-    else:
-        del global_optimizer; gc.collect()
         
     # then, get the local model
     model.apply(partial(set_lambda, lam=1.0))
@@ -446,7 +438,7 @@ def ditto_update(identifier, args, model, criterion, dataset, optimizer, lr, epo
         # track loss and metrics
         losses, acc1, acc5, ece, mce = 0, 0, 0, 0, 0
         for inputs, targets in dataloader:
-            inputs, targets = inputs.float().to(args.device), targets.to(args.device)
+            inputs, targets = inputs.to(args.device), targets.to(args.device)
 
             # inference
             outputs = model(inputs)
@@ -459,8 +451,6 @@ def ditto_update(identifier, args, model, criterion, dataset, optimizer, lr, epo
                 if 'local' not in name:
                     continue
                 prox += (weights[name[:-6]] - weights[name]).norm(2)
-            else:
-                del weights; gc.collect()
             local_loss += args.mu * prox
             
             # update
@@ -490,7 +480,6 @@ def ditto_update(identifier, args, model, criterion, dataset, optimizer, lr, epo
             mce /= len(dataloader)
             print(f'\t[TRAINING - CLIENT ({str(identifier).zfill(4)})] [LOCAL MODEL EPOCH: {str(e).zfill(2)}] Loss: {losses:.4f}, Top1 Acc.: {acc1:.4f}, Top5 Acc.: {acc5:.4f}, ECE: {ece:.4f}, MCE: {mce:.4f}')
     else:
-        del local_optimizer; gc.collect()
         model.to('cpu')
 
 
@@ -522,7 +511,7 @@ def pfedme_update(identifier, args, model, criterion, dataset, optimizer, lr, ep
         # track loss and metrics
         losses, acc1, acc5, ece, mce = 0, 0, 0, 0, 0
         for inputs, targets in dataloader:
-            inputs, targets = inputs.float().to(args.device), targets.to(args.device)
+            inputs, targets = inputs.to(args.device), targets.to(args.device)
 
             # inference
             outputs = model(inputs)
@@ -535,8 +524,6 @@ def pfedme_update(identifier, args, model, criterion, dataset, optimizer, lr, ep
                 if 'local' not in name:
                     continue
                 prox += (weights[name[:-6]] - weights[name]).norm(2)
-            else:
-                del weights; gc.collect()
             loss += args.mu * prox
 
             # update
@@ -564,10 +551,7 @@ def pfedme_update(identifier, args, model, criterion, dataset, optimizer, lr, ep
                 if 'local' not in name:
                     continue
                 weights[name[:-6]] = weights[name[:-6]] - lr * args.mu * (weights[name[:-6]] - weights[name])
-            else:
-                model.load_state_dict(weights)
-                del weights; gc.collect()
-            
+
             # get losses & metrics
             losses /= len(dataloader)
             acc1 /= len(dataloader)
@@ -606,7 +590,7 @@ def superfed_update(identifier, args, model, criterion, dataset, optimizer, lr, 
         # track loss and metrics
         losses, acc1, acc5, ece, mce = 0, 0, 0, 0, 0
         for inputs, targets in dataloader:
-            inputs, targets = inputs.float().to(args.device), targets.to(args.device)
+            inputs, targets = inputs.to(args.device), targets.to(args.device)
             
             if start_mix:
                 # instant model mixing according to mode
@@ -629,9 +613,9 @@ def superfed_update(identifier, args, model, criterion, dataset, optimizer, lr, 
                 for p_local, p_global in zip(model.parameters(), previous_global_model.parameters()): 
                     prox += (p_local - p_global.to(args.device)).norm(2)
                 loss += args.mu * prox
-                
+
             # subspace construction
-            if (args.nu > 0) and start_mix:
+            if start_mix:
                 weights = model.state_dict()
                 numerator, norm_1, norm_2 = 0, 0, 0
                 for name in weights.keys():
@@ -640,9 +624,7 @@ def superfed_update(identifier, args, model, criterion, dataset, optimizer, lr, 
                     numerator += (weights[name[:-6]] * weights[name]).sum()
                     norm_1 += weights[name[:-6]].pow(2).sum()
                     norm_2 += weights[name].pow(2).sum()
-                else:
-                    del weights; gc.collect()
-                    cos_sim = numerator.pow(2) / (norm_1 * norm_2)
+                cos_sim = numerator.pow(2) / (norm_1 * norm_2)
                 loss += args.nu * cos_sim
             
             # update
@@ -701,7 +683,7 @@ def basic_evaluate(identifier, args, model, criterion, dataset):
     # main loop
     for inputs, targets in dataloader:
         # get daata
-        inputs, targets = inputs.float().to(args.device), targets.to(args.device)
+        inputs, targets = inputs.to(args.device), targets.to(args.device)
         
         # inference
         outputs = model(inputs)
@@ -750,7 +732,7 @@ def superfed_evaluate(identifier, args, model, criterion, dataset, current_round
 
         # main loop
         for inputs, targets in dataloader:
-            inputs, targets = inputs.float().to(args.device), targets.to(args.device)
+            inputs, targets = inputs.to(args.device), targets.to(args.device)
 
             # model mixing with given value
             model.apply(partial(set_lambda, lam=lam))
