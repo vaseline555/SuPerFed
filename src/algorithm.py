@@ -361,10 +361,12 @@ def apfl_update(identifier, args, model, criterion, dataset, optimizer, lr, epoc
 # Ditto
 def ditto_update(identifier, args, model, criterion, dataset, optimizer, lr, epochs):
     assert args.tau > 0, '[ERROR] argument `tau` should be properly assigned!'
-    
     # prepare model
     model.train()
     initiate_model(model, args)
+    
+    # global model (w_0)
+    previous_global_model = copy.deepcopy(model)
     
     # make dataloader
     dataloader = torch.utils.data.DataLoader(dataset, batch_size=args.B, shuffle=True)
@@ -450,7 +452,7 @@ def ditto_update(identifier, args, model, criterion, dataset, optimizer, lr, epo
             for name in weights.keys():
                 if 'local' not in name:
                     continue
-                prox += (weights[name[:-6]] - weights[name]).norm(2)
+                prox += (previous_global_model.state_dict()[name[:-6]] - weights[name]).norm(2)
             local_loss += args.mu * prox
             
             # update
