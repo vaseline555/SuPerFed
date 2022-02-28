@@ -15,7 +15,11 @@ class TwoNN(nn.Module):
             builder.linear(in_features=200, out_features=200, bias=True),
             nn.ReLU(True)
         )
-        self.classifier = builder.linear(in_features=200, out_features=args.num_classes, bias=True)
+        self.classifier = nn.Sequential(
+            builder.linear(in_features=200, out_features=200, bias=True),
+            nn.ReLU(),
+            builder.linear(in_features=200, out_features=args.num_classes, bias=True)
+        )
 
     def forward(self, x):
         if x.ndim == 4:
@@ -39,7 +43,11 @@ class TwoCNN(nn.Module):
             builder.linear(in_features=(32 * 2) * (7 * 7), out_features=200, bias=True),
             nn.ReLU(True)
         )
-        self.classifier = builder.linear(in_features=200, out_features=args.num_classes, bias=True)
+        self.classifier = nn.Sequential(
+            builder.linear(in_features=200, out_features=200, bias=True),
+            nn.ReLU(),
+            builder.linear(in_features=200, out_features=args.num_classes, bias=True)
+        )
         
     def forward(self, x):
         x = self.layers(x)
@@ -57,7 +65,11 @@ class NextCharLM(nn.Module):
             num_layers=self.num_layers,
             batch_first=True
         )
-        self.classifier = builder.linear(256, len(string.printable))
+        self.classifier = nn.Sequential(
+            builder.linear(256, 128),
+            nn.ReLU(),
+            builder.linear(128, len(string.printable))
+        )
 
     def forward(self, x):
         encoded = self.encoder(x)
@@ -113,7 +125,11 @@ class ResNet18(nn.Module):
         self.flatten = nn.Flatten()
         
         # classifier
-        self.classifier = builder.linear(in_features=512 * block.expansion, out_features=args.num_classes)
+        self.classifier = nn.Sequential(
+            builder.linear(in_features=512 * block.expansion, out_features=256),
+            nn.ReLU(),
+            builder.linear(in_features=256, out_features=args.num_classes)
+        )
 
     def _make_layer(self, builder, block, planes, num_layers, stride=1):
         # define downsample operation
@@ -244,8 +260,9 @@ class MobileNetv2(nn.Module):
         
         # classifier
         self.classifier = nn.Sequential(
-            nn.Dropout2d(0.2),
-            builder.linear(in_features=5120, out_features=args.num_classes)
+            builder.linear(in_features=5120, out_features=256),
+            nn.ReLU(),
+            builder.linear(in_features=256, out_features=args.num_classes)
         )
 
     def forward(self, x):
@@ -283,7 +300,11 @@ class VGG9(nn.Module):
             nn.MaxPool2d(kernel_size=2, stride=2),
             nn.Flatten()
         )
-        self.classifier = builder.linear(in_features=64, out_features=args.num_classes)
+        self.classifier = nn.Sequential(
+            builder.linear(in_features=64, out_features=64),
+            nn.ReLU(),
+            builder.linear(in_features=64, out_features=args.num_classes)
+        )
 
     def forward(self, x):
         x = self.layers(x)
