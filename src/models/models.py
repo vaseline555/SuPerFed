@@ -7,18 +7,19 @@ import torch.nn.functional as F
 # Models from FedAvg paper (McMahan et al., 2016) #
 ###################################################
 class TwoNN(nn.Module):
-    def __init__(self, builder, args, block=None):
+    def __init__(self, builder, args, seed=None, block=None):
         super(TwoNN, self).__init__()
+        self._seed = seed
         self.layers = nn.Sequential(
-            builder.linear(in_features=784, out_features=200, bias=True),
+            builder.linear(in_features=784, out_features=200, bias=False, seed=seed),
             nn.ReLU(True),
-            builder.linear(in_features=200, out_features=200, bias=True),
+            builder.linear(in_features=200, out_features=200, bias=False, seed=seed),
             nn.ReLU(True)
         )
         self.classifier = nn.Sequential(
-            builder.linear(in_features=200, out_features=200, bias=True),
+            builder.linear(in_features=200, out_features=200, bias=False, seed=seed),
             nn.ReLU(),
-            builder.linear(in_features=200, out_features=args.num_classes, bias=True)
+            builder.linear(in_features=200, out_features=args.num_classes, bias=False, seed=seed)
         )
 
     def forward(self, x):
@@ -29,24 +30,25 @@ class TwoNN(nn.Module):
         return x
 
 class TwoCNN(nn.Module):
-    def __init__(self, builder, args, block=None):
+    def __init__(self, builder, args, seed, block=None):
         super(TwoCNN, self).__init__()
+        self._seed = seed
         self.activation = nn.ReLU(True)
         self.layers = nn.Sequential(
-            builder.conv(in_channels=args.in_channels, out_channels=32, kernel_size=5, padding=1, stride=1, bias=False),
+            builder.conv(in_channels=args.in_channels, out_channels=32, kernel_size=5, padding=1, stride=1, bias=False, seed=seed),
             nn.ReLU(True),
             nn.MaxPool2d(kernel_size=2, padding=1),
-            builder.conv(in_channels=32, out_channels=64, kernel_size=5, padding=1, stride=1, bias=False),
+            builder.conv(in_channels=32, out_channels=64, kernel_size=5, padding=1, stride=1, bias=False, seed=seed),
             nn.ReLU(True),
             nn.MaxPool2d(kernel_size=2, padding=1),
-            nn.Flatten(),
-            builder.linear(in_features=(32 * 2) * (7 * 7), out_features=200, bias=True),
-            nn.ReLU(True)
+            nn.Flatten()
         )
         self.classifier = nn.Sequential(
-            builder.linear(in_features=200, out_features=200, bias=True),
-            nn.ReLU(),
-            builder.linear(in_features=200, out_features=args.num_classes, bias=True)
+            builder.linear(in_features=(32 * 2) * (7 * 7), out_features=200, bias=False, seed=seed),
+            nn.ReLU(True),
+            builder.linear(in_features=200, out_features=200, bias=False, seed=seed),
+            nn.ReLU(True),
+            builder.linear(in_features=200, out_features=args.num_classes, bias=False, seed=seed)
         )
         
     def forward(self, x):
@@ -55,44 +57,42 @@ class TwoCNN(nn.Module):
         return x
 
 class NextCharLM(nn.Module):
-    def __init__(self, builder, args, block=None):
+    def __init__(self, builder, args, seed, block=None):
         super(NextCharLM, self).__init__()
+        self._seed = seed
         self.num_layers = 2
-        self.encoder = builder.embedding(len(string.printable), 8)
+        self.encoder = builder.embedding(len(string.printable), 8, seed=seed)
         self.rnn = builder.lstm(
             input_size=8,
             hidden_size=256,
             num_layers=self.num_layers,
-            batch_first=True
+            batch_first=True,
+            bias=False,
+            seed=seed
         )
-        self.classifier = nn.Sequential(
-            builder.linear(256, 128),
-            nn.ReLU(),
-            builder.linear(128, len(string.printable))
-        )
+        self.classifier = builder.linear(256, len(string.printable), bias=False, seed=seed)
 
     def forward(self, x):
         encoded = self.encoder(x)
-        self.rnn.flatten_parameters()
         output, _ = self.rnn(encoded)
         output = self.classifier(output[:, -1, :])
         return output
 
     
-############
-# ResNet18 #
-############
+###########
+# ResNet9 #
+###########
 # https://github.com/apple/learning-subspaces/blob/9e4cdcf4cb92835f8e66d5ed13dc01efae548f67/models/resnet.py
 class BasicBlock(nn.Module):
     expansion = 1
-    def __init__(self, builder, in_channels, out_channels, stride=1, downsample=None):
+    def __init__(self, builder, in_channels, out_channels, stride=1, downsample=None, seed=None):
         super(BasicBlock, self).__init__()        
         self.module = nn.Sequential(
-            builder.conv(in_channels=in_channels, out_channels=out_channels, kernel_size=3, stride=stride, padding=1),
-            builder.bn(out_channels),
+            builder.conv(in_channels=in_channels, out_channels=out_channels, kernel_size=3, stride=stride, padding=1, bias=False, seed=seed),
+            builder.bn(out_channels, seed=seed),
             nn.ReLU(inplace=True),
-            builder.conv(in_channels=out_channels, out_channels=out_channels, kernel_size=3, padding=1),
-            builder.bn(out_channels)
+            builder.conv(in_channels=out_channels, out_channels=out_channels, kernel_size=3, padding=1, bias=False, seed=seed),
+            builder.bn(out_channels, seed=seed)
         )
         self.downsample = downsample
 
@@ -103,40 +103,37 @@ class BasicBlock(nn.Module):
         out = F.relu(out)
         return out
 
-class ResNet18(nn.Module):
-    def __init__(self, builder, args, block):
-        super(ResNet18, self).__init__()
+class ResNet9(nn.Module):
+    def __init__(self, builder, args, seed, block):
+        super(ResNet9, self).__init__()
+        self._seed = seed
         self.base_width = 64
         
         # input layer
         self.in_conv = nn.Sequential(
-            builder.conv(in_channels=args.in_channels, out_channels=self.base_width, kernel_size=3, stride=2, padding=1),
-            builder.bn(self.base_width),
+            builder.conv(in_channels=args.in_channels, out_channels=self.base_width, kernel_size=3, stride=2, padding=1, bias=False, seed=seed),
+            builder.bn(self.base_width, seed=seed),
             nn.ReLU(inplace=True)
         )
         self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
         
         # intermediate layers
-        self.layer1 = self._make_layer(builder, block, 64, 2)
-        self.layer2 = self._make_layer(builder, block, 128, 2)
-        self.layer3 = self._make_layer(builder, block, 256, 2, stride=2)
-        self.layer4 = self._make_layer(builder, block, 512, 2, stride=2)
+        self.layer1 = self._make_layer(builder, block, 64, 1)
+        self.layer2 = self._make_layer(builder, block, 128, 1)
+        self.layer3 = self._make_layer(builder, block, 256, 1, stride=2)
+        self.layer4 = self._make_layer(builder, block, 512, 1, stride=2)
         self.avgpool = nn.AdaptiveAvgPool2d(1)
         self.flatten = nn.Flatten()
         
         # classifier
-        self.classifier = nn.Sequential(
-            builder.linear(in_features=512 * block.expansion, out_features=256),
-            nn.ReLU(),
-            builder.linear(in_features=256, out_features=args.num_classes)
-        )
+        self.classifier = builder.linear(in_features=512 * block.expansion, out_features=args.num_classes, bias=False, seed=seed)
 
     def _make_layer(self, builder, block, planes, num_layers, stride=1):
         # define downsample operation
         downsample = None
         if stride != 1 or self.base_width != planes * block.expansion:
-            dconv = builder.conv(in_channels=self.base_width, out_channels=planes * block.expansion, kernel_size=1, stride=stride)
-            dbn = builder.bn(planes * block.expansion)
+            dconv = builder.conv(in_channels=self.base_width, out_channels=planes * block.expansion, kernel_size=1, stride=stride, bias=False, seed=self._seed)
+            dbn = builder.bn(planes * block.expansion, seed=self._seed)
             if dbn is not None:
                 downsample = nn.Sequential(dconv, dbn)
             else:
@@ -145,12 +142,12 @@ class ResNet18(nn.Module):
         # construct layers
         layers = []
         layers.append(
-            block(builder, self.base_width, planes, stride, downsample)
+            block(builder, self.base_width, planes, stride, downsample, seed=self._seed)
         )
         self.base_width = planes * block.expansion
         for i in range(1, num_layers):
             layers.append(
-                block(builder, self.base_width, planes)
+                block(builder, self.base_width, planes, seed=self._seed)
             )
         return nn.Sequential(*layers)
 
@@ -171,105 +168,50 @@ class ResNet18(nn.Module):
         return x
     
 
-###############
-# MobileNetv2 #
-###############
+#############
+# MobileNet #
+#############
 # https://github.com/jmjeon94/MobileNet-Pytorch
-class InvertedBlock(nn.Module):
-    def __init__(self, builder, in_channels, out_channels, expansion, stride):
-        super(InvertedBlock, self).__init__()
-        assert stride in [1, 2]
-        self.use_skip_connection = stride == 1 and in_channels == out_channels
+def efficient_conv(builder, seed, in_channels, out_channels, stride):
+    return nn.Sequential(
+        builder.conv(in_channels=in_channels, out_channels=in_channels, kernel_size=3, stride=stride, padding=0, groups=in_channels, bias=False, seed=seed),
+        builder.bn(in_channels, seed=seed),
+        nn.ReLU(inplace=True),
         
-        # layer construction
-        layers = []
-        if expansion != 1:
-            layers.append(
-                nn.Sequential(
-                    builder.conv(in_channels=in_channels, out_channels=in_channels * expansion, kernel_size=1, stride=1),
-                    builder.bn(in_channels * expansion),
-                    nn.ReLU6(inplace=True)
-                )
-            )
-        layers.extend(
-            [
-                nn.Sequential( # depthwise convolution
-                    builder.conv(in_channels=in_channels * expansion, out_channels=in_channels * expansion, kernel_size=3, stride=stride, groups=in_channels * expansion, padding=1),
-                    builder.bn(in_channels * expansion),
-                    nn.ReLU6(inplace=True)
-                ),
-                nn.Sequential( # pointwise convolution
-                    builder.conv(in_channels=in_channels * expansion, out_channels=out_channels, kernel_size=1, stride=1),
-                    builder.bn(out_channels)
-                )
-            ]
-        )
-        self.layers = nn.Sequential(*layers)
+        builder.conv(in_channels=in_channels, out_channels=out_channels, kernel_size=1, stride=1, padding=0, bias=False, seed=seed),
+        builder.bn(out_channels, seed=seed),
+        nn.ReLU(inplace=True)
+    )
 
-    def forward(self, x):
-        if self.use_skip_connection:
-            return x + self.layers(x)
-        return self.layers(x)
-
-class MobileNetv2(nn.Module):
-    def __init__(self, builder, args, block):
-        super(MobileNetv2, self).__init__()
+class MobileNet(nn.Module):
+    def __init__(self, builder, args, seed, block):
+        super(MobileNet, self).__init__()
+        self._seed = seed
         self.builder = builder
-        self.configs = [ # t, c, n, s
-            [1, 16, 1, 1],
-            [6, 24, 2, 2],
-            [6, 32, 3, 2],
-            [6, 64, 4, 2],
-            [6, 96, 3, 1],
-            [6, 160, 3, 2],
-            [6, 320, 1, 1]
-        ]
         
         # input layer
         self.in_conv = nn.Sequential(
-            builder.conv(in_channels=args.in_channels, out_channels=args.in_channels, kernel_size=3, padding=1),
-            builder.conv(in_channels=args.in_channels, out_channels=32, kernel_size=3, stride=1 if args.is_small else 2, padding=1),
-            builder.bn(32),
-            nn.ReLU6(inplace=True)
+            builder.conv(in_channels=args.in_channels, out_channels=32, kernel_size=3, stride=2, padding=1, bias=False, seed=seed),
+            builder.bn(32, seed=seed),
+            nn.ReLU(inplace=True)
         )
         
         # intermediate layers
-        layers = []
-        in_channels = 32
-        for t, c, n, s in self.configs:
-            for i in range(n):
-                stride = s if i == 0 else 1
-                layers.append(
-                    InvertedBlock(
-                        builder=self.builder,
-                        in_channels=in_channels,
-                        out_channels=c,
-                        expansion=t,
-                        stride=stride
-                    )
-                )
-                in_channels = c
-        self.layers = nn.Sequential(*layers)
-        
-        self.out_conv = nn.Sequential(
-                builder.conv(in_channels=in_channels, out_channels=1280, kernel_size=1, stride=1),
-                builder.bn(1280),
-                nn.ReLU6(inplace=True)
-            )
-        self.flatten = nn.Flatten()
-        
-        # classifier
-        self.classifier = nn.Sequential(
-            builder.linear(in_features=5120, out_features=256),
-            nn.ReLU(),
-            builder.linear(in_features=256, out_features=args.num_classes)
+        self.layers = nn.Sequential(
+            efficient_conv(builder, seed, 32, 64, 1),
+            efficient_conv(builder, seed, 64, 128, 2),
+            efficient_conv(builder, seed, 128, 256, 2),
+            efficient_conv(builder, seed, 256, 512, 1),
+            nn.AdaptiveAvgPool2d(1),
+            nn.Flatten()
         )
+
+        # classifier
+        self.classifier = builder.linear(in_features=512, out_features=args.num_classes, bias=False, seed=seed)
 
     def forward(self, x):
         x = self.in_conv(x)
         x = self.layers(x)
-        x = self.out_conv(x)
-        x = self.flatten(x)
         x = self.classifier(x)
         return x
     
@@ -279,31 +221,32 @@ class MobileNetv2(nn.Module):
 # VGG9 #
 ########
 class VGG9(nn.Module):
-    def __init__(self, builder, args, block):
-        super(VGG9, self).__init__() 
+    def __init__(self, builder, args, seed, block):
+        super(VGG9, self).__init__()
+        self._seed = seed
         self.layers = nn.Sequential(
-            builder.conv(in_channels=args.in_channels, out_channels=16, kernel_size=3, padding=1),
-            nn.ReLU(),
+            builder.conv(in_channels=args.in_channels, out_channels=16, kernel_size=3, padding=1, bias=False, seed=seed),
+            nn.ReLU(True),
             nn.MaxPool2d(kernel_size=2, stride=2),
-            builder.conv(in_channels=16, out_channels=32, kernel_size=3, padding=1),
-            nn.ReLU(),
+            builder.conv(in_channels=16, out_channels=32, kernel_size=3, padding=1, bias=False, seed=seed),
+            nn.ReLU(True),
             nn.MaxPool2d(kernel_size=2, stride=2),
-            builder.conv(in_channels=32, out_channels=64, kernel_size=3, padding=1),
-            nn.ReLU(),
-            builder.conv(in_channels=64, out_channels=64, kernel_size=3, padding=1),
-            nn.ReLU(),
+            builder.conv(in_channels=32, out_channels=64, kernel_size=3, padding=1, bias=False, seed=seed),
+            nn.ReLU(True),
+            builder.conv(in_channels=64, out_channels=64, kernel_size=3, padding=1, bias=False, seed=seed),
+            nn.ReLU(True),
             nn.MaxPool2d(kernel_size=2, stride=2),
-            builder.conv(in_channels=64, out_channels=128, kernel_size=3, padding=1),
-            nn.ReLU(),
-            builder.conv(in_channels=128, out_channels=64, kernel_size=3, padding=1),
-            nn.ReLU(),
+            builder.conv(in_channels=64, out_channels=128, kernel_size=3, padding=1, bias=False, seed=seed),
+            nn.ReLU(True),
+            builder.conv(in_channels=128, out_channels=64, kernel_size=3, padding=1, bias=False, seed=seed),
+            nn.ReLU(True),
             nn.MaxPool2d(kernel_size=2, stride=2),
             nn.Flatten()
         )
         self.classifier = nn.Sequential(
-            builder.linear(in_features=64, out_features=64),
-            nn.ReLU(),
-            builder.linear(in_features=64, out_features=args.num_classes)
+            builder.linear(in_features=64, out_features=64, bias=False, seed=seed),
+            nn.ReLU(True),
+            builder.linear(in_features=64, out_features=args.num_classes, bias=False, seed=seed)
         )
 
     def forward(self, x):

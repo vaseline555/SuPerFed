@@ -16,7 +16,7 @@ from src.models.builder import Builder
 from src.models import models
 
 def main(args, writer):
-    """Main program to run LG TMS Anomaly Detction.
+    """Main program to run federated learning.
     
     Args:
         args: user input arguments parsed by argparser
@@ -31,19 +31,16 @@ def main(args, writer):
     np.random.seed(args.global_seed)
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
-    
+    args.global_seed = [args.global_seed]
     
     ###################
     # Prepare dataset #
     ###################
     # adjust `n_jobs`
-    if args.n_jobs == -1:
-        args.n_jobs = os.cpu_count() - 1
+    if args.n_jobs == -1: args.n_jobs = os.cpu_count() - 2
         
     # get dataset
     split_map, server_testset, client_datasets = get_dataset(args)
-    
-    
     
     #################
     # Prepare model #
@@ -53,22 +50,25 @@ def main(args, writer):
     args.device = cuda_string if torch.cuda.is_available() else 'cpu'
     
     # check if correct model is specified
-    builder = Builder(args)
-    if 'ResNet18' in args.model_name:
+    if 'ResNet' in args.model_name:
         block = models.BasicBlock
-    elif 'MobileNetv2' in args.model_name:
-        block = models.InvertedBlock
     else:
         block = None
-    model = getattr(models, args.model_name)(builder, args, block)
-
-    
+    model = getattr(models, args.model_name)
     
     ##############
     # Run server #
     ##############
     # create central server
-    central_server = Server(args, writer, model, server_testset, client_datasets)
+    central_server = Server(
+        args=args,
+        writer=writer,
+        model=model,
+        builder=Builder,
+        block=block,
+        server_testset=server_testset,
+        client_datasets=client_datasets
+    )
     
     # initialize central server
     central_server.setup()
@@ -76,26 +76,37 @@ def main(args, writer):
     # do federated learning
     central_server.fit()
 
-    # save resulting losses and metrics
+    # save results (losses and metrics)
     with open(os.path.join(args.result_path, f'{args.exp_name}/final_result.pkl'), 'wb') as result_file:
         arguments = {'arguments': {str(arg): getattr(args, arg) for arg in vars(args)}}
         sample_stats = {'sample_statistics': split_map}
         results = {'results': {key: value for key, value in central_server.results.items() if len(value) > 0}}
         pickle.dump({**arguments, **sample_stats, **results}, result_file)
+    
+    # save checkpoints
+    checkpoint = central_server.global_model.state_dict()
 
+    # save checkpoints
+    torch.save(checkpoint, os.path.join(args.result_path, f'{args.exp_name}_ckpt.pt'))
+            
+    # close writer
+    if writer is not None:
+        writer.close()
+    
 if __name__ == "__main__":
     # parse user inputs as arguments
     parser = argparse.ArgumentParser()
     
     # default arguments
     parser.add_argument('--exp_name', help='experiment name', type=str, required=True)
-    parser.add_argument('--global_seed', help='global random seed (applied EXCEPT model initiailization)', type=int, default=5959)
+    parser.add_argument('--global_seed', help='global random seed', type=int, default=5959)
     parser.add_argument('--device', help='device to use, either cpu or cuda; default is cpu', type=str, default='cuda', choices=['cpu', 'cuda'])
     parser.add_argument('--device_ids',  nargs='+', type=int, help='GPU device ids for multi-GPU training (use all GPUs if no number is passed)', default=[])
     parser.add_argument('--data_path', help='data path', type=str, default='./data')
     parser.add_argument('--log_path', help='log path', type=str, default='./log')
     parser.add_argument('--result_path', help='result path', type=str, default='./result')
     parser.add_argument('--plot_path', help='plot path', type=str, default='./plot')
+    parser.add_argument('--use_tb', help='use TensorBoard to track logs (if passed)', action='store_true')
     parser.add_argument('--tb_port', help='TensorBoard port number', type=int, default=6006)
     parser.add_argument('--tb_host', help='TensorBoard host address', type=str, default='0.0.0.0')
     parser.add_argument('--n_jobs', help='workeres for multiprocessing', type=int, default=-1)
@@ -118,7 +129,7 @@ if __name__ == "__main__":
     parser.add_argument('--alpha', help='shape parameter for a Dirichlet distribution used for splitting data in non-IID manner; used only when `algo_type=dirichlet`', type=float, default=0.5)
     
     # federated learning arguments
-    parser.add_argument('--algorithm', help='type of an algorithm to use', type=str, choices=['fedavg', 'fedprox', 'lg-fedavg', 'fedper', 'fedrep', 'ditto', 'apfl', 'pfedme', 'superfed-mm', 'superfed-lm'], required=True)
+    parser.add_argument('--algorithm', help='type of an algorithm to use', type=str, choices=['fedavg', 'fedprox', 'scaffold', 'lg-fedavg', 'fedper', 'fedrep', 'ditto', 'apfl', 'pfedme', 'superfed-mm', 'superfed-lm'], required=True)
     parser.add_argument('--C', help='sampling fraction of clietns per each round', type=float, default=0.1)
     parser.add_argument('--K', help='number of total cilents', type=int, default=100)
     parser.add_argument('--R', help='number of total federated learning rounds', type=int, default=1000)
@@ -126,20 +137,19 @@ if __name__ == "__main__":
     parser.add_argument('--B', help='batch size for local update in each client', type=int, default=10)
     parser.add_argument('--L', help='when to start local training round (start local model training from `floor(L * R)` round)', type=float, default=0.2)
     parser.add_argument('--eval_every', help='evaluate at every `eval_every` round', type=int, default=100)
-    parser.add_argument('--evaluate_on_holdout_clients', help='evaluate performances on hold-out clients rather than local test set of each client (if passed)', action='store_true')
-    
+  
     # optimization related arguments
+    parser.add_argument('--optimizer', help='type of optimization method (should be a module of `torch.optim`)', type=str, default='SGD')
+    parser.add_argument('--criterion', help='type of criterion for objective function (should be a module of `torch.nn`)', type=str, default='CrossEntropyLoss')
     parser.add_argument('--lr', help='learning rate of each client', type=float, default=0.01)
-    parser.add_argument('--lr_decay', help='magnitude of learning rate decay at every round', type=float, default=0.99)
+    parser.add_argument('--lr_decay', help='magnitude of learning rate decay at every round', type=float, default=0.995)
     parser.add_argument('--mu',help='constant for regularization term (for fedprox, ditto, pfedme, superfed)', type=float, default=0.01)
     parser.add_argument('--nu', help='constant for low-loss subspace construction term', type=float, default=2.0)
     parser.add_argument('--tau', help='constant for fine tuning head or updating a local model (for fedrep, ditto)', type=int, default=5)
     parser.add_argument('--apfl_constant', help='constant for mixing models (for apfl)', type=float, default=0.25)
     
     # model related arguments
-    parser.add_argument('--model_name', help='model to use [TwoNN|TwoCNN|NextCharLM|ResNet18|MobileNetv2|VGG9]', type=str, choices=['TwoNN', 'TwoCNN', 'NextCharLM', 'ResNet18', 'MobileNetv2', 'VGG9'])
-    parser.add_argument('--init_type', type=str, help='initialization type [normal|xavier|xavier_uniform|kaiming|orthogonal|none]', default='xavier', choices=['xavier', 'normal', 'kaiming', 'xavier_uniform', 'orthogonal', 'none'])
-    parser.add_argument('--init_gain', type=float, help='init gain for init type', default=1.0)
+    parser.add_argument('--model_name', help='model to use [TwoNN|TwoCNN|NextCharLM|ResNet9|MobileNet|VGG9]', type=str, choices=['TwoNN', 'TwoCNN', 'NextCharLM', 'ResNet9', 'MobileNet', 'VGG9'])
     parser.add_argument('--fc_type', help='type of fully connected layer', type=str, choices=['StandardLinear', 'LinesLinear'], default='StandardLinear')
     parser.add_argument('--conv_type', help='type of fully connected layer', type=str, choices=['StandardConv', 'LinesConv'], default='StandardConv')
     parser.add_argument('--bn_type', help='type of fully batch normalization layer', type=str, choices=['StandardBN', 'LinesBN'], default='StandardBN')
@@ -161,13 +171,17 @@ if __name__ == "__main__":
     args.log_path = f'{args.log_path}/{args.exp_name}'
 
     # initiate TensorBaord for tracking losses and metrics
-    writer = SummaryWriter(log_dir=args.log_path, filename_suffix=str(args.global_seed))
-    tb_thread = threading.Thread(
-        target=launch_tensor_board,
-        args=([args.log_path, args.tb_port, args.tb_host])
-        ).start()
-    time.sleep(3.0)
-    
+    if args.use_tb:
+        writer = SummaryWriter(log_dir=args.log_path, filename_suffix=str(args.global_seed))
+        tb_thread = threading.Thread(
+            target=launch_tensor_board,
+            args=([args.log_path, args.tb_port, args.tb_host])
+            ).start()
+        time.sleep(3.0)
+    else:
+        tb_thread = None
+        writer = None
+        
     # display and log experiment configuration
     print('\n[WELCOME] Configurations...')
     for arg in vars(args):
@@ -177,5 +191,8 @@ if __name__ == "__main__":
     main(args, writer)
     
     # bye!
-    print('[INFO] ...done federated learning!\n[INFO] ...exit program!')
+    print('[INFO] ...done federated learning!')
+    if tb_thread is not None: tb_thread.join()
+    time.sleep(3.0)
+    print('[INFO] ...exit program!')
     sys.exit(0)

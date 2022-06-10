@@ -12,79 +12,48 @@ import numpy as np
 ########################
 # TinyImageNet dataset #
 ########################
-# TinyImageNet
-def normalize_tin_val_folder_structure(path, images_folder='images', annotations_file='val_annotations.txt'):
-    # Check if files/annotations are still there to see if we already run reorganize the folder structure.
-    images_folder = os.path.join(path, images_folder)
-    annotations_file = os.path.join(path, annotations_file)
+# https://github.com/luoyan407/congruency/blob/master/train_timgnet.py
+def parse_classes(file):
+    classes = []
+    filenames = []
+    with open(file) as f:
+        lines = f.readlines()
+    lines = [x.strip() for x in lines]
+    for x in range(len(lines)):
+        tokens = lines[x].split()
+        classes.append(tokens[1])
+        filenames.append(tokens[0])
+    return filenames, classes
 
-    # Exists
-    if not os.path.exists(images_folder) \
-       and not os.path.exists(annotations_file):
-        if not os.listdir(path):
-            raise RuntimeError('[ERROR] validation folder is empty!')
-        return
+class TinyImageNetDataset(torch.utils.data.Dataset):
+    """Dataset wrapping images and ground truths."""
+    def __init__(self, img_path, gt_path, class_to_idx=None, transform=None):
+        self.img_path = img_path
+        self.transform = transform
+        self.gt_path = gt_path
+        self.class_to_idx = class_to_idx
+        self.classidx = []
+        self.imgs, self.classnames = parse_classes(gt_path)
+        for classname in self.classnames:
+            self.classidx.append(self.class_to_idx[classname])
 
-    # Parse the annotations
-    with open(annotations_file) as f:
-        for line in f:
-            values = line.split()
-            img = values[0]
-            label = values[1]
-            img_file = os.path.join(images_folder, values[0])
-            label_folder = os.path.join(path, label)
-            os.makedirs(label_folder, exist_ok=True)
-            try:
-                shutil.move(img_file, os.path.join(label_folder, img))
-            except FileNotFoundError:
-                continue
+    def __getitem__(self, index):
+        """
+        Args:
+            index (int): Index
+        Returns:
+            tuple: (image, y) where y is the label of the image.
+        """
+        img = None
+        with open(os.path.join(self.img_path, self.imgs[index]), 'rb') as f:
+            img = PIL.Image.open(f).convert('RGB')
+            if self.transform is not None:
+                img = self.transform(img)
+        y = self.classidx[index]
+        return img, y
 
-    os.sync()
-    assert not os.listdir(images_folder)
-    shutil.rmtree(images_folder)
-    os.remove(annotations_file)
-    os.sync()
-
-class TinyImageNetDataset(torchvision.datasets.ImageFolder):
-    """Dataset for TinyImageNet-200"""
-    base_folder = 'tiny-imagenet-200'
-    zip_md5 = '90528d7ca1a48142e341f4ef8d21d0de'
-    splits = ('train', 'val')
-    filename = 'tiny-imagenet-200.zip'
-    url = 'http://cs231n.stanford.edu/tiny-imagenet-200.zip'
-
-    def __init__(self, args, split='train', download=False, **kwargs):
-        self.data_root = os.path.expanduser(args.data_path)
-        self.split = torchvision.datasets.utils.verify_str_arg(split, 'split', self.splits)
-
-        if download:
-            self.download()
-
-        if not self._check_exists():
-            raise RuntimeError('[ERROR] dataset not found! You can use `download=True` to download it.')
-        super().__init__(self.split_folder, **kwargs)
-
-    @property
-    def dataset_folder(self):
-        return os.path.join(self.data_root, self.base_folder)
-
-    @property
-    def split_folder(self):
-        return os.path.join(self.dataset_folder, self.split)
-
-    def _check_exists(self):
-        return os.path.exists(self.split_folder)
-
-    def extra_repr(self):
-        return "Split: {split}".format(**self.__dict__)
-
-    def download(self):
-        if self._check_exists(): return
-        torchvision.datasets.utils.download_and_extract_archive(self.url, self.data_root, filename=self.filename, remove_finished=True, md5=self.zip_md5)
-        assert 'val' in self.splits
-        normalize_tin_val_folder_structure(os.path.join(self.dataset_folder, 'val'))
-    
-
+    def __len__(self):
+        return len(self.imgs)
     
 ########################################
 # Dataset prepared in `LEAF` benchmark #
@@ -127,11 +96,12 @@ class FEMNISTDataset(LEAFDataset):
 
     def _make_dataset(self):
         self.inputs, self.targets = self.data['x'], self.data['y']
+        self.inputs = torch.tensor(self.inputs)
+        self.targets = torch.tensor(self.targets).long()
         
     def __getitem__(self, index):
         # get corresponding inputs & targets pair
-        inputs, targets = self.inputs[index], self.targets[index]
-        inputs = np.array(inputs).reshape(-1, 28, 28).astype(np.float32)
+        inputs, targets = self.inputs[index].reshape(-1, 28, 28), self.targets[index]
         return inputs, targets
     
     def __len__(self):
@@ -149,6 +119,8 @@ class ShakespeareDataset(LEAFDataset):
         self.inputs, self.targets = self.data['x'], self.data['y']
         self._build_mapping()
         self._tokenize()
+        self.inputs = torch.tensor(self.inputs).long()
+        self.targets = torch.tensor(self.targets).long()
         
     def _build_mapping(self):
         self.char_to_idx = dict()
@@ -162,11 +134,11 @@ class ShakespeareDataset(LEAFDataset):
         for idx in range(len(self.targets)):
             self.targets[idx] = [self.char_to_idx[char] for char in self.targets[idx]]
 
+    def __getitem__(self, index):
+        return self.inputs[index], self.targets[index][0]
+
     def __len__(self):
         return len(self.inputs)
-
-    def __getitem__(self, index):
-        return np.array(self.inputs)[index], np.array(self.targets)[index][0]
 
 
 

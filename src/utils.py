@@ -314,17 +314,27 @@ def get_dataset(args):
     
     elif args.dataset == 'TinyImageNet':
         # call raw dataset
-        raw_train = TinyImageNetDataset(
-            args, 
-            split='train',
-            download=True,
-            transform=torchvision.transforms.ToTensor()
+        raw_train = torchvision.datasets.ImageFolder(
+            os.path.join(args.data_path, 'tiny-imagenet-200', 'train'),
+            transform=torchvision.transforms.Compose(
+                [
+                    torchvision.transforms.RandomRotation(20),
+                    torchvision.transforms.RandomHorizontalFlip(0.5),
+                    torchvision.transforms.ToTensor(),
+                    torchvision.transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+                ]
+            )
         )
         raw_test = TinyImageNetDataset(
-            args, 
-            split='val',
-            download=True,
-            transform=torchvision.transforms.ToTensor()
+            img_path=os.path.join(args.data_path, 'tiny-imagenet-200', 'val', 'images'), 
+            gt_path=os.path.join(args.data_path, 'tiny-imagenet-200', 'val', 'val_annotations.txt'),
+            class_to_idx=raw_train.class_to_idx.copy(),
+            transform=torchvision.transforms.Compose(
+                [
+                    torchvision.transforms.ToTensor(),
+                    torchvision.transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+                ]
+            )
         )
         
         # get split indices
@@ -349,7 +359,7 @@ def get_dataset(args):
 ###################
 # Model initation #
 ###################
-def init_weights(model, init_type, init_gain, seeds):
+def init_weights(model, init_type, init_gain, seed):
     """Initialize network weights.
 
     Args:
@@ -365,26 +375,20 @@ def init_weights(model, init_type, init_gain, seeds):
         classname = m.__class__.__name__
         if classname.find('BatchNorm2d') != -1:
             if hasattr(m, 'weight') and m.weight is not None:
-                torch.manual_seed(seeds[0]); torch.nn.init.normal_(m.weight.data, 1.0, init_gain)
-                if len(seeds) == 2: torch.manual_seed(seeds[-1]); torch.nn.init.normal_(m.weight_local.data, 1.0, init_gain)
+                torch.manual_seed(seed); torch.nn.init.normal_(m.weight.data, 1.0, init_gain)
             if hasattr(m, 'bias') and m.bias is not None:
-                torch.nn.init.constant_(m.bias.data, 0.0)
-        elif hasattr(m, 'weight') and (classname.find('Conv') != -1 or classname.find('Linear') != -1):
+                torch.nn.init.zeros_(m.bias.data, 0.0)
+        elif hasattr(m, 'weight') and (classname.find('Conv') != -1 or classname.find('Linear') != -1 or classname.find('Embedding') != -1):
             if init_type == 'normal':
-                torch.manual_seed(seeds[0]); torch.nn.init.normal_(m.weight.data, 0.0, init_gain)
-                if len(seeds) == 2: torch.manual_seed(seeds[-1]); torch.nn.init.normal_(m.weight_local.data, 0.0, init_gain)
+                torch.manual_seed(seed); torch.nn.init.normal_(m.weight.data, 0.0, init_gain)
             elif init_type == 'xavier':
-                torch.manual_seed(seeds[0]); torch.nn.init.xavier_normal_(m.weight.data, gain=init_gain)
-                if len(seeds) == 2: torch.manual_seed(seeds[-1]); torch.nn.init.xavier_normal_(m.weight_local.data, gain=init_gain)
+                torch.manual_seed(seed); torch.nn.init.xavier_normal_(m.weight.data, gain=init_gain)
             elif init_type == 'xavier_uniform':
-                torch.manual_seed(seeds[0]); torch.nn.init.xavier_uniform_(m.weight.data, gain=1.0)
-                if len(seeds) == 2: torch.manual_seed(seeds[-1]); torch.nn.init.xavier_uniform_(m.weight_local.data, gain=1.0)
+                torch.manual_seed(seed); torch.nn.init.xavier_uniform_(m.weight.data, gain=1.0)
             elif init_type == 'kaiming':
-                torch.manual_seed(seeds[0]); torch.nn.init.kaiming_normal_(m.weight.data, a=0, mode='fan_in')
-                if len(seeds) == 2: torch.manual_seed(seeds[-1]); torch.nn.init.kaiming_normal_(m.weight_local.data, a=0, mode='fan_in')
+                torch.manual_seed(seed); torch.nn.init.kaiming_normal_(m.weight.data, a=0, mode='fan_in')
             elif init_type == 'orthogonal':
-                torch.manual_seed(seeds[0]); torch.nn.init.orthogonal_(m.weight.data, gain=init_gain)
-                if len(seeds) == 2: torch.manual_seed(seeds[-1]); torch.nn.init.orthogonal_(m.weight_local.data, gain=init_gain)
+                torch.manual_seed(seed); torch.nn.init.orthogonal_(m.weight.data, gain=init_gain)
             elif init_type == 'none':  # uses pytorch's default init method
                 m.reset_parameters()
             else:
@@ -394,29 +398,22 @@ def init_weights(model, init_type, init_gain, seeds):
         elif classname.find('LSTM') != -1:
             for l in range(m.num_layers):
                 if init_type == 'normal':
-                    torch.manual_seed(seeds[0]); torch.nn.init.normal_(getattr(m, f'weight_hh_l{l}'), 0.0, init_gain); torch.nn.init.normal_(getattr(m, f'weight_ih_l{l}'), 0.0, init_gain)
-                    if len(seeds) == 2: torch.manual_seed(seeds[-1]); torch.nn.init.normal_(getattr(m, f'weight_hh_l{l}_local'), 0.0, init_gain); torch.nn.init.normal_(getattr(m, f'weight_ih_l{l}_local'), 0.0, init_gain)
+                    torch.manual_seed(seed); torch.nn.init.normal_(getattr(m, f'weight_hh_l{l}'), 0.0, init_gain); torch.nn.init.normal_(getattr(m, f'weight_ih_l{l}'), 0.0, init_gain)
                 elif init_type == 'xavier':
-                    torch.manual_seed(seeds[0]); torch.nn.init.xavier_normal_(getattr(m, f'weight_hh_l{l}'), gain=init_gain); torch.nn.init.xavier_normal_(getattr(m, f'weight_ih_l{l}'), gain=init_gain)
-                    if len(seeds) == 2: torch.manual_seed(seeds[-1]); torch.nn.init.xavier_normal_(getattr(m, f'weight_hh_l{l}_local'), gain=init_gain); torch.nn.init.xavier_normal_(getattr(m, f'weight_ih_l{l}_local'), gain=init_gain)
+                    torch.manual_seed(seed); torch.nn.init.xavier_normal_(getattr(m, f'weight_hh_l{l}'), gain=init_gain); torch.nn.init.xavier_normal_(getattr(m, f'weight_ih_l{l}'), gain=init_gain)
                 elif init_type == 'xavier_uniform':
-                    torch.manual_seed(seeds[0]); torch.nn.init.xavier_uniform_(getattr(m, f'weight_hh_l{l}'), gain=1.0); torch.nn.init.xavier_uniform_(getattr(m, f'weight_ih_l{l}'), gain=1.0)
-                    if len(seeds) == 2: torch.manual_seed(seeds[-1]); torch.nn.init.xavier_uniform_(getattr(m, f'weight_hh_l{l}_local'), gain=1.0); torch.nn.init.xavier_uniform_(getattr(m, f'weight_ih_l{l}_local'), gain=1.0)
+                    torch.manual_seed(seed); torch.nn.init.xavier_uniform_(getattr(m, f'weight_hh_l{l}'), gain=1.0); torch.nn.init.xavier_uniform_(getattr(m, f'weight_ih_l{l}'), gain=1.0)
                 elif init_type == 'kaiming':
-                    torch.manual_seed(seeds[0]); torch.nn.init.kaiming_normal_(getattr(m, f'weight_hh_l{l}'), a=0, mode='fan_in'); torch.nn.init.kaiming_normal_(getattr(m, f'weight_ih_l{l}'), a=0, mode='fan_in')
-                    if len(seeds) == 2: torch.manual_seed(seeds[-1]); torch.nn.init.kaiming_normal_(getattr(m, f'weight_hh_l{l}_local'), a=0, mode='fan_in'); torch.nn.init.kaiming_normal_(getattr(m, f'weight_ih_l{l}_local'), a=0, mode='fan_in')
+                    torch.manual_seed(seed); torch.nn.init.kaiming_normal_(getattr(m, f'weight_hh_l{l}'), a=0, mode='fan_in'); torch.nn.init.kaiming_normal_(getattr(m, f'weight_ih_l{l}'), a=0, mode='fan_in')
                 elif init_type == 'orthogonal':
-                    torch.manual_seed(seeds[0]); torch.nn.init.orthogonal_(getattr(m, f'weight_hh_l{l}'), gain=init_gain); torch.nn.init.orthogonal_(getattr(m, f'weight_ih_l{l}'), gain=init_gain)
-                    if len(seeds) == 2: torch.manual_seed(seeds[-1]); torch.nn.init.orthogonal_(getattr(m, f'weight_hh_l{l}_local'), gain=init_gain); torch.nn.init.orthogonal_(getattr(m, f'weight_ih_l{l}_local'), gain=init_gain)
+                    torch.manual_seed(seed); torch.nn.init.orthogonal_(getattr(m, f'weight_hh_l{l}'), gain=init_gain); torch.nn.init.orthogonal_(getattr(m, f'weight_ih_l{l}'), gain=init_gain)
                 elif init_type == 'none':  # uses pytorch's default init method
                     m.reset_parameters()
                 else:
                     raise NotImplementedError(f'[ERROR] Initialization method {init_type} is not implemented!')
                 if m.bias is True:
                     torch.nn.init.constant_(getattr(m, f'bias_hh_l{l}'), 0.0); torch.nn.init.constant_(getattr(m, f'bias_ih_l{l}'), 0.0)
-                    if len(seeds) == 2: torch.nn.init.constant_(getattr(m, f'bias_hh_l{l}_local'), 0.0); torch.nn.init.constant_(getattr(m, f'bias_ih_l{l}_local'), 0.0)
     model.apply(init_func)
-    return model
 
 def initiate_model(model, args):
     """Initiate model instance; use multi-GPU if available.
@@ -460,7 +457,7 @@ def set_lambda(module, lam, layerwise=False):
         or isinstance(module, torch.nn.Embedding)
     ):
         if layerwise:
-            lam = np.random.uniform(0.5, 1.0)
+            lam = np.random.uniform(0.0, 1.0)
         setattr(module, 'lam', lam)
 
             
@@ -470,6 +467,7 @@ def set_lambda(module, lam, layerwise=False):
 # Metrics #
 ###########
 # top-k accuracy
+@torch.no_grad()
 def get_accuracy(output, target, topk=(1, 5)):
     """
     Computes the accuracy over the k top predictions for the specified values of k
@@ -491,40 +489,28 @@ def get_accuracy(output, target, topk=(1, 5)):
     but if it were either cat or dog you'd accumulate +1 for that example.
     :return: list of topk accuracy [top1st, top2nd, ...] depending on your topk input
     """
-    with torch.no_grad():
-        # ---- get the topk most likely labels according to your model
-        # get the largest k \in [n_classes] (i.e. the number of most likely probabilities we will use)
-        maxk = max(topk)  # max number labels we will consider in the right choices for out model
-        batch_size = target.size(0)
+    # get the largest k \in [n_classes] (i.e. the number of most likely probabilities we will use)
+    maxk = max(topk)  # max number labels we will consider in the right choices for out model
+    batch_size = target.size(0)
 
-        # get top maxk indicies that correspond to the most likely probability scores
-        # (note _ means we don't care about the actual top maxk scores just their corresponding indicies/labels)
-        _, y_pred = output.topk(k=maxk, dim=1)  # _, [B, n_classes] -> [B, maxk]
-        y_pred = y_pred.t()  # [B, maxk] -> [maxk, B] Expects input to be <= 2-D tensor and transposes dimensions 0 and 1.
+    # get top maxk indicies that correspond to the most likely probability scores
+    _, y_pred = output.topk(k=maxk, dim=1)  # _, [B, n_classes] -> [B, maxk]
+    y_pred = y_pred.t()  # [B, maxk] -> [maxk, B] Expects input to be <= 2-D tensor and transposes dimensions 0 and 1.
 
-        # - get the credit for each example if the models predictions is in maxk values (main crux of code)
-        # for any example, the model will get credit if it's prediction matches the ground truth
-        # for each example we compare if the model's best prediction matches the truth. If yes we get an entry of 1.
-        # if the k'th top answer of the model matches the truth we get 1.
-        # Note: this for any example in batch we can only ever get 1 match (so we never overestimate accuracy <1)
-        target_reshaped = target.view(1, -1).expand_as(y_pred)  # [B] -> [B, 1] -> [maxk, B]
-        # compare every topk's model prediction with the ground truth & give credit if any matches the ground truth
-        correct = (y_pred == target_reshaped)  # [maxk, B] were for each example we know which topk prediction matched truth
-        # original: correct = pred.eq(target.view(1, -1).expand_as(pred))
+    # - get the credit for each example if the models predictions is in maxk values (main crux of code)
+    target_reshaped = target.view(1, -1).expand_as(y_pred)  # [B] -> [B, 1] -> [maxk, B]
+    correct = (y_pred == target_reshaped)  # [maxk, B] were for each example we know which topk prediction matched truth
+    # original: correct = pred.eq(target.view(1, -1).expand_as(pred))
 
-        # -- get topk accuracy
-        list_topk_accs = []  # idx is topk1, topk2, ... etc
-        for k in topk:
-            # get tensor of which topk answer was right
-            ind_which_topk_matched_truth = correct[:k]  # [maxk, B] -> [k, B]
-            # flatten it to help compute if we got it correct for each example in batch
-            flattened_indicator_which_topk_matched_truth = ind_which_topk_matched_truth.reshape(-1).float()  # [k, B] -> [kB]
-            # get if we got it right for any of our top k prediction for each example in batch
-            tot_correct_topk = flattened_indicator_which_topk_matched_truth.float().sum(dim=0, keepdim=True)  # [kB] -> [1]
-            # compute topk accuracy - the accuracy of the mode's ability to get it right within it's top k guesses/preds
-            topk_acc = tot_correct_topk / batch_size  # topk accuracy for entire batch
-            list_topk_accs.append(topk_acc.detach().cpu())
-        return torch.stack(list_topk_accs)  # list of topk accuracies for entire batch [topk1, topk2, ... etc]
+    # -- get topk accuracy
+    list_topk_accs = []  # idx is topk1, topk2, ... etc
+    for k in topk:
+        ind_which_topk_matched_truth = correct[:k]  # [maxk, B] -> [k, B]
+        flattened_indicator_which_topk_matched_truth = ind_which_topk_matched_truth.reshape(-1).float()  # [k, B] -> [kB]
+        tot_correct_topk = flattened_indicator_which_topk_matched_truth.float().sum(dim=0, keepdim=True)  # [kB] -> [1]
+        topk_acc = tot_correct_topk / batch_size  # topk accuracy for entire batch
+        list_topk_accs.append(topk_acc.detach().cpu())
+    return torch.stack(list_topk_accs)  # list of topk accuracies for entire batch [topk1, topk2, ... etc]
 
 # calibration error
 class CalibrationError(torch.nn.Module):
@@ -568,11 +554,15 @@ class CalibrationError(torch.nn.Module):
                 ece += torch.abs(avg_confidence_in_bin - accuracy_in_bin) * prop_in_bin
                 mce.append(torch.abs(avg_confidence_in_bin - accuracy_in_bin))
         else:
-            mce = torch.stack(mce).max()
+            try:
+                mce = torch.stack(mce).max()
+            except:
+                mce = torch.tensor([1])
         return ece, mce
 
     
     
+
 ###########################
 # Record metrics & losses #
 ###########################
@@ -585,31 +575,33 @@ def record_results(args, writer, container, mode, step, loss, acc1, acc5, ece, m
     container[f'{mode}_mce_mean'].append(mce.mean().float().item()); container[f'{mode}_mce_std'].append(mce.std(unbiased=False).float().item())
 
     # record metrics and loss
-    writer.add_scalars(
-        f'Loss_{mode}',
-        {'loss_mean': loss.mean()},
-        step
-    )
-    writer.add_scalars(
-        f'Top 1 Accuracy_{mode}',
-        {'top1_acc_mean': acc1.mean()},
-        step
-    )
-    writer.add_scalars(
-        f'Top 5 Accuracy_{mode}',
-        {'top5_acc_mean': acc5.mean()},
-        step
-    )
-    writer.add_scalars(
-        f'Expected Calibration Error_{mode}',
-        {'ece_mean': ece.mean()},
-        step
-    )
-    writer.add_scalars(
-        f'Maximum Calibration Error_{mode}',
-        {'mce_mean': mce.mean()},
-        step
-    )
+    if writer is not None:
+        writer.add_scalars(
+            f'Loss_{mode}',
+            {'loss_mean': loss.mean()},
+            step
+        )
+        writer.add_scalars(
+            f'Top 1 Accuracy_{mode}',
+            {'top1_acc_mean': acc1.mean()},
+            step
+        )
+        writer.add_scalars(
+            f'Top 5 Accuracy_{mode}',
+            {'top5_acc_mean': acc5.mean()},
+            step
+        )
+        writer.add_scalars(
+            f'Expected Calibration Error_{mode}',
+            {'ece_mean': ece.mean()},
+            step
+        )
+        writer.add_scalars(
+            f'Maximum Calibration Error_{mode}',
+            {'mce_mean': mce.mean()},
+            step
+        )
+        writer.flush()
     return container, loss, acc1, acc5, ece, mce
 
     
