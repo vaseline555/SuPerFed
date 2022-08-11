@@ -205,7 +205,7 @@ def get_dataset(args):
         test_size = int(len(subset) * args.test_fraction)
         return (torch.utils.data.random_split(subset, [len(subset) - test_size, test_size]))
     
-    if args.dataset in ['MNIST', 'KMNIST', 'CIFAR10', 'CIFAR100']:
+    if args.dataset in ['MNIST', 'CIFAR10', 'CIFAR100']:
         # call raw datasets
         raw_train = torchvision.datasets.__dict__[args.dataset](
             root=args.data_path, 
@@ -248,69 +248,6 @@ def get_dataset(args):
         with pool.ThreadPool(processes=args.n_jobs) as workhorse:
             client_datasets = workhorse.map(construct_dataset, tqdm(split_map.values(), desc=f'[INFO] ...create datasets [{args.dataset}]!'))
         return split_map, raw_test, client_datasets
-    
-    elif args.dataset in ['SVHN']:
-        # call raw datasets
-        raw_train = torchvision.datasets.__dict__[args.dataset](
-            root=args.data_path, 
-            split='train', 
-            transform=torchvision.transforms.Compose(
-                [
-                    torchvision.transforms.Resize(28), 
-                    torchvision.transforms.ToTensor()
-                ]
-            ), 
-            download=True
-        )
-        raw_test = torchvision.datasets.__dict__[args.dataset](
-            root=args.data_path, 
-            split='test', 
-            transform=torchvision.transforms.Compose(
-                [
-                    torchvision.transforms.Resize(28), 
-                    torchvision.transforms.ToTensor()
-                ]
-            ), 
-            download=True
-        )
-        
-        # for compatilibity
-        setattr(raw_train, 'targets', raw_train.labels)
-        setattr(raw_test, 'targets', raw_test.labels)
-
-        # get split indices
-        split_map = split_data(args, raw_train)
-
-        # construct client datasets
-        with pool.ThreadPool(processes=args.n_jobs) as workhorse:
-            client_datasets = workhorse.map(construct_dataset, tqdm(split_map.values(), desc=f'[INFO] ...create datasets [{args.dataset}]!'))
-        return split_map, raw_test, client_datasets
-    
-    elif args.dataset in ['Caltech101']:
-        # call raw datasets
-        raw_train = torchvision.datasets.__dict__[args.dataset](
-            root=args.data_path, 
-            target_type='category', 
-            transform=torchvision.transforms.Compose(
-                [
-                    torchvision.transforms.Grayscale(num_output_channels=1),
-                    torchvision.transforms.Resize((64, 64)), 
-                    torchvision.transforms.ToTensor()
-                ]
-            ), 
-            download=True
-        )
-        
-        # for compatilibity
-        setattr(raw_train, 'targets', raw_train.y)
-
-        # get split indices
-        split_map = split_data(args, raw_train)
-
-        # construct client datasets
-        with pool.ThreadPool(processes=args.n_jobs) as workhorse:
-            client_datasets = workhorse.map(construct_dataset, tqdm(split_map.values(), desc=f'[INFO] ...create datasets [{args.dataset}]!'))
-        return split_map, None, client_datasets
     
     elif args.dataset == 'TinyImageNet':
         # call raw dataset
@@ -356,65 +293,10 @@ def get_dataset(args):
         return split_map, None, client_datasets
 
 
+    
 ###################
 # Model initation #
 ###################
-def init_weights(model, init_type, init_gain, seed):
-    """Initialize network weights.
-
-    Args:
-        model (torch.nn.Module): network to be initialized
-        init_type (string): the name of an initialization method: normal | xavier | xavier_uniform | kaiming | orthogonal | none
-        init_gain (float): scaling factor for normal, xavier and orthogonal
-        seeds (list): list of seeds used for an initialization
-
-    Returns:
-        model (torch.nn.Module): initialized model with `init_type` and `init_gain`
-    """
-    def init_func(m):  # define the initialization function
-        classname = m.__class__.__name__
-        if classname.find('BatchNorm2d') != -1:
-            if hasattr(m, 'weight') and m.weight is not None:
-                torch.manual_seed(seed); torch.nn.init.normal_(m.weight.data, 1.0, init_gain)
-            if hasattr(m, 'bias') and m.bias is not None:
-                torch.nn.init.zeros_(m.bias.data, 0.0)
-        elif hasattr(m, 'weight') and (classname.find('Conv') != -1 or classname.find('Linear') != -1 or classname.find('Embedding') != -1):
-            if init_type == 'normal':
-                torch.manual_seed(seed); torch.nn.init.normal_(m.weight.data, 0.0, init_gain)
-            elif init_type == 'xavier':
-                torch.manual_seed(seed); torch.nn.init.xavier_normal_(m.weight.data, gain=init_gain)
-            elif init_type == 'xavier_uniform':
-                torch.manual_seed(seed); torch.nn.init.xavier_uniform_(m.weight.data, gain=1.0)
-            elif init_type == 'kaiming':
-                torch.manual_seed(seed); torch.nn.init.kaiming_normal_(m.weight.data, a=0, mode='fan_in')
-            elif init_type == 'orthogonal':
-                torch.manual_seed(seed); torch.nn.init.orthogonal_(m.weight.data, gain=init_gain)
-            elif init_type == 'none':  # uses pytorch's default init method
-                m.reset_parameters()
-            else:
-                raise NotImplementedError(f'[ERROR] Initialization method {init_type} is not implemented!')
-            if hasattr(m, 'bias') and m.bias is not None:
-                torch.nn.init.constant_(m.bias.data, 0.0)
-        elif classname.find('LSTM') != -1:
-            for l in range(m.num_layers):
-                if init_type == 'normal':
-                    torch.manual_seed(seed); torch.nn.init.normal_(getattr(m, f'weight_hh_l{l}'), 0.0, init_gain); torch.nn.init.normal_(getattr(m, f'weight_ih_l{l}'), 0.0, init_gain)
-                elif init_type == 'xavier':
-                    torch.manual_seed(seed); torch.nn.init.xavier_normal_(getattr(m, f'weight_hh_l{l}'), gain=init_gain); torch.nn.init.xavier_normal_(getattr(m, f'weight_ih_l{l}'), gain=init_gain)
-                elif init_type == 'xavier_uniform':
-                    torch.manual_seed(seed); torch.nn.init.xavier_uniform_(getattr(m, f'weight_hh_l{l}'), gain=1.0); torch.nn.init.xavier_uniform_(getattr(m, f'weight_ih_l{l}'), gain=1.0)
-                elif init_type == 'kaiming':
-                    torch.manual_seed(seed); torch.nn.init.kaiming_normal_(getattr(m, f'weight_hh_l{l}'), a=0, mode='fan_in'); torch.nn.init.kaiming_normal_(getattr(m, f'weight_ih_l{l}'), a=0, mode='fan_in')
-                elif init_type == 'orthogonal':
-                    torch.manual_seed(seed); torch.nn.init.orthogonal_(getattr(m, f'weight_hh_l{l}'), gain=init_gain); torch.nn.init.orthogonal_(getattr(m, f'weight_ih_l{l}'), gain=init_gain)
-                elif init_type == 'none':  # uses pytorch's default init method
-                    m.reset_parameters()
-                else:
-                    raise NotImplementedError(f'[ERROR] Initialization method {init_type} is not implemented!')
-                if m.bias is True:
-                    torch.nn.init.constant_(getattr(m, f'bias_hh_l{l}'), 0.0); torch.nn.init.constant_(getattr(m, f'bias_ih_l{l}'), 0.0)
-    model.apply(init_func)
-
 def initiate_model(model, args):
     """Initiate model instance; use multi-GPU if available.
     
@@ -460,7 +342,6 @@ def set_lambda(module, lam, layerwise=False):
             lam = np.random.uniform(0.0, 1.0)
         setattr(module, 'lam', lam)
 
-            
 
 
 ###########

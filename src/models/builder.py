@@ -22,7 +22,7 @@ class Builder(object):
         return conv
 
     def bn(self, num_features, seed=None):
-        bn = self.bn_layer(num_features)
+        bn = self.bn_layer(num_features, track_running_stats=False)
         torch.manual_seed(seed[0]); torch.nn.init.ones_(bn.weight); torch.nn.init.zeros_(bn.bias)
         if len(seed) == 2: bn.initialize(seed[-1])
         return bn

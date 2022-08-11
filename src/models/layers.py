@@ -110,17 +110,11 @@ class TwoParamLSTM(SubspaceLSTM):
             for l in range(self.num_layers):
                 torch.nn.init.zeros_(getattr(self, f'weight_hh_l{l}_local'))
                 torch.nn.init.zeros_(getattr(self, f'weight_ih_l{l}_local'))
-                if self.bias:
-                    torch.nn.init.zeros_(getattr(self, f'bias_hh_l{l}_local'))
-                    torch.nn.init.zeros_(getattr(self, f'bias_ih_l{l}_local'))
         else:
             for l in range(self.num_layers):
                 torch.manual_seed(seed)
                 torch.nn.init.uniform_(getattr(self, f'weight_hh_l{l}_local'), a=math.sqrt(1 / self.hidden_size) * -1, b=math.sqrt(1 / self.hidden_size))
                 torch.nn.init.uniform_(getattr(self, f'weight_ih_l{l}_local'), a=math.sqrt(1 / self.hidden_size) * -1, b=math.sqrt(1 / self.hidden_size))
-                if self.bias:
-                    torch.nn.init.zeros_(getattr(self, f'bias_hh_l{l}_local'))
-                    torch.nn.init.zeros_(getattr(self, f'bias_ih_l{l}_local'))
             
 class LinesLSTM(TwoParamLSTM):
     def get_weight(self):
@@ -128,9 +122,6 @@ class LinesLSTM(TwoParamLSTM):
         for l in range(self.num_layers):
             weight_list.append((1 - self.lam) * getattr(self, f'weight_ih_l{l}') + self.lam * getattr(self, f'weight_ih_l{l}_local'))
             weight_list.append((1 - self.lam) * getattr(self, f'weight_hh_l{l}') + self.lam * getattr(self, f'weight_hh_l{l}_local'))
-            if self.bias:
-                weight_list.append((1 - self.lam) * getattr(self, f'bias_ih_l{l}') + self.lam * getattr(self, f'bias_ih_l{l}_local'))
-                weight_list.append((1 - self.lam) * getattr(self, f'bias_hh_l{l}') + self.lam * getattr(self, f'bias_hh_l{l}_local'))
         return weight_list
 
     
@@ -208,12 +199,8 @@ class TwoParamBN(SubspaceBN):
         self.bias_local = nn.Parameter(torch.Tensor(self.num_features))
         
     def initialize(self, seed):
-        if seed == -1: # SCAFFOLD
-            torch.nn.init.ones_(self.weight_local)
-            torch.nn.init.zeros_(self.bias_local)
-        else:
-            torch.nn.init.ones_(self.weight_local)
-            torch.nn.init.zeros_(self.bias_local)
+        torch.nn.init.ones_(self.weight_local)
+        torch.nn.init.zeros_(self.bias_local)
         
 class LinesBN(TwoParamBN):
     def get_weight(self):

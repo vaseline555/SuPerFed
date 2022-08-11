@@ -31,6 +31,7 @@ def main(args, writer):
     np.random.seed(args.global_seed)
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
+    torch.autograd.set_detect_anomaly(True)
     args.global_seed = [args.global_seed]
     
     ###################
@@ -87,7 +88,7 @@ def main(args, writer):
     checkpoint = central_server.global_model.state_dict()
 
     # save checkpoints
-    torch.save(checkpoint, os.path.join(args.result_path, f'{args.exp_name}_ckpt.pt'))
+    torch.save(checkpoint, os.path.join(args.result_path, f'{args.exp_name}/ckpt.pt'))
             
     # close writer
     if writer is not None:
@@ -132,17 +133,18 @@ if __name__ == "__main__":
     parser.add_argument('--algorithm', help='type of an algorithm to use', type=str, choices=['fedavg', 'fedprox', 'scaffold', 'lg-fedavg', 'fedper', 'fedrep', 'ditto', 'apfl', 'pfedme', 'superfed-mm', 'superfed-lm'], required=True)
     parser.add_argument('--C', help='sampling fraction of clietns per each round', type=float, default=0.1)
     parser.add_argument('--K', help='number of total cilents', type=int, default=100)
-    parser.add_argument('--R', help='number of total federated learning rounds', type=int, default=1000)
+    parser.add_argument('--R', help='number of total federated learning rounds', type=int, default=500)
     parser.add_argument('--E', help='number of local epochs', type=int, default=10)
     parser.add_argument('--B', help='batch size for local update in each client', type=int, default=10)
     parser.add_argument('--L', help='when to start local training round (start local model training from `floor(L * R)` round)', type=float, default=0.2)
+    parser.add_argument('--beta', help='momentum update parameter used for global model aggregation at the server', type=float, default=1)
     parser.add_argument('--eval_every', help='evaluate at every `eval_every` round', type=int, default=100)
   
     # optimization related arguments
     parser.add_argument('--optimizer', help='type of optimization method (should be a module of `torch.optim`)', type=str, default='SGD')
     parser.add_argument('--criterion', help='type of criterion for objective function (should be a module of `torch.nn`)', type=str, default='CrossEntropyLoss')
     parser.add_argument('--lr', help='learning rate of each client', type=float, default=0.01)
-    parser.add_argument('--lr_decay', help='magnitude of learning rate decay at every round', type=float, default=0.995)
+    parser.add_argument('--lr_decay', help='magnitude of learning rate decay at every round', type=float, default=0.999)
     parser.add_argument('--mu',help='constant for regularization term (for fedprox, ditto, pfedme, superfed)', type=float, default=0.01)
     parser.add_argument('--nu', help='constant for low-loss subspace construction term', type=float, default=2.0)
     parser.add_argument('--tau', help='constant for fine tuning head or updating a local model (for fedrep, ditto)', type=int, default=5)
@@ -164,8 +166,9 @@ if __name__ == "__main__":
         os.makedirs(os.path.join(args.result_path, args.exp_name))
     
     # make path for saving plots
-    if not os.path.exists(os.path.join(args.plot_path, args.exp_name)):
-        os.makedirs(os.path.join(args.plot_path, args.exp_name))
+    if args.algorithm in ['superfed-mm', 'superfed-lm']:
+        if not os.path.exists(os.path.join(args.plot_path, args.exp_name)):
+            os.makedirs(os.path.join(args.plot_path, args.exp_name))
         
     # define path to save a log
     args.log_path = f'{args.log_path}/{args.exp_name}'
@@ -192,7 +195,6 @@ if __name__ == "__main__":
     
     # bye!
     print('[INFO] ...done federated learning!')
-    if tb_thread is not None: tb_thread.join()
-    time.sleep(3.0)
+    if tb_thread is not None: tb_thread.join(timeout=3.0)
     print('[INFO] ...exit program!')
     sys.exit(0)

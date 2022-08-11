@@ -18,7 +18,7 @@ class TwoNN(nn.Module):
         )
         self.classifier = nn.Sequential(
             builder.linear(in_features=200, out_features=200, bias=False, seed=seed),
-            nn.ReLU(),
+            nn.ReLU(True),
             builder.linear(in_features=200, out_features=args.num_classes, bias=False, seed=seed)
         )
 
@@ -33,7 +33,6 @@ class TwoCNN(nn.Module):
     def __init__(self, builder, args, seed, block=None):
         super(TwoCNN, self).__init__()
         self._seed = seed
-        self.activation = nn.ReLU(True)
         self.layers = nn.Sequential(
             builder.conv(in_channels=args.in_channels, out_channels=32, kernel_size=5, padding=1, stride=1, bias=False, seed=seed),
             nn.ReLU(True),
@@ -90,7 +89,7 @@ class BasicBlock(nn.Module):
         self.module = nn.Sequential(
             builder.conv(in_channels=in_channels, out_channels=out_channels, kernel_size=3, stride=stride, padding=1, bias=False, seed=seed),
             builder.bn(out_channels, seed=seed),
-            nn.ReLU(inplace=True),
+            nn.ReLU(True),
             builder.conv(in_channels=out_channels, out_channels=out_channels, kernel_size=3, padding=1, bias=False, seed=seed),
             builder.bn(out_channels, seed=seed)
         )
@@ -113,7 +112,7 @@ class ResNet9(nn.Module):
         self.in_conv = nn.Sequential(
             builder.conv(in_channels=args.in_channels, out_channels=self.base_width, kernel_size=3, stride=2, padding=1, bias=False, seed=seed),
             builder.bn(self.base_width, seed=seed),
-            nn.ReLU(inplace=True)
+            nn.ReLU(True)
         )
         self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
         
@@ -122,11 +121,15 @@ class ResNet9(nn.Module):
         self.layer2 = self._make_layer(builder, block, 128, 1)
         self.layer3 = self._make_layer(builder, block, 256, 1, stride=2)
         self.layer4 = self._make_layer(builder, block, 512, 1, stride=2)
-        self.avgpool = nn.AdaptiveAvgPool2d(1)
-        self.flatten = nn.Flatten()
         
         # classifier
-        self.classifier = builder.linear(in_features=512 * block.expansion, out_features=args.num_classes, bias=False, seed=seed)
+        self.classifier = nn.Sequential(
+            nn.AdaptiveAvgPool2d(1),
+            nn.Flatten(),
+            builder.linear(in_features=512 * block.expansion, out_features=256, bias=False, seed=seed),
+            nn.ReLU(True),
+            builder.linear(in_features=256, out_features=args.num_classes, bias=False, seed=seed)
+        )
 
     def _make_layer(self, builder, block, planes, num_layers, stride=1):
         # define downsample operation
@@ -163,8 +166,7 @@ class ResNet9(nn.Module):
         x = self.layer4(x)
         
         # classifier
-        feats = self.avgpool(x)
-        x = self.classifier(self.flatten(feats))
+        x = self.classifier(x)
         return x
     
 
@@ -176,11 +178,11 @@ def efficient_conv(builder, seed, in_channels, out_channels, stride):
     return nn.Sequential(
         builder.conv(in_channels=in_channels, out_channels=in_channels, kernel_size=3, stride=stride, padding=0, groups=in_channels, bias=False, seed=seed),
         builder.bn(in_channels, seed=seed),
-        nn.ReLU(inplace=True),
+        nn.ReLU(True),
         
         builder.conv(in_channels=in_channels, out_channels=out_channels, kernel_size=1, stride=1, padding=0, bias=False, seed=seed),
         builder.bn(out_channels, seed=seed),
-        nn.ReLU(inplace=True)
+        nn.ReLU(True)
     )
 
 class MobileNet(nn.Module):
@@ -193,7 +195,7 @@ class MobileNet(nn.Module):
         self.in_conv = nn.Sequential(
             builder.conv(in_channels=args.in_channels, out_channels=32, kernel_size=3, stride=2, padding=1, bias=False, seed=seed),
             builder.bn(32, seed=seed),
-            nn.ReLU(inplace=True)
+            nn.ReLU(True)
         )
         
         # intermediate layers
@@ -202,12 +204,16 @@ class MobileNet(nn.Module):
             efficient_conv(builder, seed, 64, 128, 2),
             efficient_conv(builder, seed, 128, 256, 2),
             efficient_conv(builder, seed, 256, 512, 1),
-            nn.AdaptiveAvgPool2d(1),
-            nn.Flatten()
         )
 
         # classifier
-        self.classifier = builder.linear(in_features=512, out_features=args.num_classes, bias=False, seed=seed)
+        self.classifier = nn.Sequential(
+            nn.AdaptiveAvgPool2d(1),
+            nn.Flatten(),
+            builder.linear(in_features=512, out_features=256, bias=False, seed=seed),
+            nn.ReLU(True),
+            builder.linear(in_features=256, out_features=args.num_classes, bias=False, seed=seed)
+        )
 
     def forward(self, x):
         x = self.in_conv(x)
@@ -233,20 +239,20 @@ class VGG9(nn.Module):
             nn.MaxPool2d(kernel_size=2, stride=2),
             builder.conv(in_channels=32, out_channels=64, kernel_size=3, padding=1, bias=False, seed=seed),
             nn.ReLU(True),
-            builder.conv(in_channels=64, out_channels=64, kernel_size=3, padding=1, bias=False, seed=seed),
-            nn.ReLU(True),
-            nn.MaxPool2d(kernel_size=2, stride=2),
             builder.conv(in_channels=64, out_channels=128, kernel_size=3, padding=1, bias=False, seed=seed),
             nn.ReLU(True),
-            builder.conv(in_channels=128, out_channels=64, kernel_size=3, padding=1, bias=False, seed=seed),
+            nn.MaxPool2d(kernel_size=2, stride=2),
+            builder.conv(in_channels=128, out_channels=256, kernel_size=3, padding=1, bias=False, seed=seed),
+            nn.ReLU(True),
+            builder.conv(in_channels=256, out_channels=512, kernel_size=3, padding=1, bias=False, seed=seed),
             nn.ReLU(True),
             nn.MaxPool2d(kernel_size=2, stride=2),
-            nn.Flatten()
         )
         self.classifier = nn.Sequential(
-            builder.linear(in_features=64, out_features=64, bias=False, seed=seed),
+            nn.Flatten(),
+            builder.linear(in_features=512, out_features=256, bias=False, seed=seed),
             nn.ReLU(True),
-            builder.linear(in_features=64, out_features=args.num_classes, bias=False, seed=seed)
+            builder.linear(in_features=256, out_features=args.num_classes, bias=False, seed=seed)
         )
 
     def forward(self, x):

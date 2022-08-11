@@ -161,27 +161,26 @@ class Server(object):
             for it, idx in tqdm(enumerate(sampled_client_indices), leave=False):
                 local_weights = self.clients[idx]._model.state_dict()
                 for key in self.global_model.state_dict().keys():
-                    if 'local' not in key:
-                        if it == 0:
-                            aggregated_weights[key] = coefficients[it] * local_weights[key]
-                        else:
-                            aggregated_weights[key] += coefficients[it] * local_weights[key]
+                    if 'weight' not in key:
+                        aggregated_weights[key] = self.global_model.state_dict()[key].clone()
                     else:
                         if it == 0:
-                            aggregated_weights[key] = coefficients[it] * local_weights[key]
+                            aggregated_weights[key] = coefficients[it] * local_weights[key] * self.args.beta + self.global_model.state_dict()[key].clone() * (1 - self.args.beta)
                         else:
-                            aggregated_weights[key] += coefficients[it] * local_weights[key]
-        
+                            aggregated_weights[key] += coefficients[it] * local_weights[key] * self.args.beta + self.global_model.state_dict()[key].clone() * (1 - self.args.beta)
+
         # aggregate global model parameters and control variates
         elif self.algorithm in ['scaffold']:
             for it, idx in tqdm(enumerate(sampled_client_indices), leave=False):
                 local_weights = self.clients[idx]._model.state_dict()
                 for key in self.global_model.state_dict().keys():
-                    if 'local' not in key: # update global model
+                    if 'weight' not in key:
+                        aggregated_weights[key] = self.global_model.state_dict()[key].clone()
+                    elif 'local' not in key: # update global model
                         if it == 0:
-                            aggregated_weights[key] = coefficients[it] * local_weights[key]
+                            aggregated_weights[key] = coefficients[it] * local_weights[key] * self.args.beta + self.global_model.state_dict()[key].clone() * (1 - self.args.beta)
                         else:
-                            aggregated_weights[key] += coefficients[it] * local_weights[key]
+                            aggregated_weights[key] += coefficients[it] * local_weights[key] * self.args.beta + self.global_model.state_dict()[key].clone() * (1 - self.args.beta)
                     else: # update server's control variates
                         if it == 0:
                             aggregated_weights[key] = self.global_model.state_dict()[key] + self.args.C * local_weights[key]
@@ -196,11 +195,13 @@ class Server(object):
             for it, idx in tqdm(enumerate(sampled_client_indices), leave=False):
                 local_weights = self.clients[idx]._model.state_dict()
                 for key in self.global_model.state_dict().keys():
-                    if 'classifier' in key:
+                    if 'weight' not in key:
+                        aggregated_weights[key] = self.global_model.state_dict()[key].clone()
+                    elif 'classifier' in key:
                         if it == 0:
-                            aggregated_weights[key] = coefficients[it] * local_weights[key]
+                            aggregated_weights[key] = coefficients[it] * local_weights[key] * self.args.beta + self.global_model.state_dict()[key].clone() * (1 - self.args.beta)
                         else:
-                            aggregated_weights[key] += coefficients[it] * local_weights[key]
+                            aggregated_weights[key] += coefficients[it] * local_weights[key] * self.args.beta + self.global_model.state_dict()[key].clone() * (1 - self.args.beta)
                     else:
                         aggregated_weights[key] = self.global_model.state_dict()[key]
         
@@ -209,11 +210,13 @@ class Server(object):
             for it, idx in tqdm(enumerate(sampled_client_indices), leave=False):
                 local_weights = self.clients[idx]._model.state_dict()
                 for key in self.global_model.state_dict().keys():
-                    if 'classifier' not in key:
+                    if 'weight' not in key:
+                        aggregated_weights[key] = self.global_model.state_dict()[key].clone()
+                    elif 'classifier' not in key:
                         if it == 0:
-                            aggregated_weights[key] = coefficients[it] * local_weights[key]
+                            aggregated_weights[key] = coefficients[it] * local_weights[key] * self.args.beta + self.global_model.state_dict()[key].clone() * (1 - self.args.beta)
                         else:
-                            aggregated_weights[key] += coefficients[it] * local_weights[key]
+                            aggregated_weights[key] += coefficients[it] * local_weights[key] * self.args.beta + self.global_model.state_dict()[key].clone() * (1 - self.args.beta)
                     else:
                         aggregated_weights[key] = self.global_model.state_dict()[key]
         
@@ -222,11 +225,13 @@ class Server(object):
             for it, idx in tqdm(enumerate(sampled_client_indices), leave=False):
                 local_weights = self.clients[idx]._model.state_dict()
                 for key in self.global_model.state_dict().keys():
-                    if 'local' not in key:
+                    if 'weight' not in key:
+                        aggregated_weights[key] = self.global_model.state_dict()[key].clone()
+                    elif 'local' not in key:
                         if it == 0:
-                            aggregated_weights[key] = coefficients[it] * local_weights[key]
+                            aggregated_weights[key] = coefficients[it] * local_weights[key] * self.args.beta + self.global_model.state_dict()[key].clone() * (1 - self.args.beta)
                         else:
-                            aggregated_weights[key] += coefficients[it] * local_weights[key]
+                            aggregated_weights[key] += coefficients[it] * local_weights[key] * self.args.beta + self.global_model.state_dict()[key].clone() * (1 - self.args.beta)
                 else:
                     for key in self.global_model.state_dict().keys():
                         if 'local' in key:
@@ -237,11 +242,13 @@ class Server(object):
             for it, idx in tqdm(enumerate(sampled_client_indices), leave=False):
                 local_weights = self.clients[idx]._model.state_dict()
                 for key in self.global_model.state_dict().keys():
-                    if 'local' not in key:
+                    if 'weight' not in key:
+                        aggregated_weights[key] = self.global_model.state_dict()[key].clone()
+                    elif 'local' not in key:
                         if it == 0:
-                            aggregated_weights[key] = coefficients[it] * local_weights[key]
+                            aggregated_weights[key] = coefficients[it] * local_weights[key] * self.args.beta + self.global_model.state_dict()[key].clone() * (1 - self.args.beta)
                         else:
-                            aggregated_weights[key] += coefficients[it] * local_weights[key]
+                            aggregated_weights[key] += coefficients[it] * local_weights[key] * self.args.beta + self.global_model.state_dict()[key].clone() * (1 - self.args.beta)
                     else:
                         aggregated_weights[key] = self.global_model.state_dict()[key]
         

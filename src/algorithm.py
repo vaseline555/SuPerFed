@@ -2,7 +2,6 @@ import copy
 import torch
 import numpy as np
 
-from joblib import Parallel, delayed
 from functools import partial
 
 from .utils import initiate_model, get_accuracy, CalibrationError, set_lambda
@@ -94,7 +93,8 @@ def fedprox_update(identifier, args, model, criterion, dataset, optimizer, lr):
             
             # calculate proximity regularization
             prox = 0.
-            for name, param in model.named_parameters(): 
+            for name, param in model.named_parameters():
+                if ('bias' in name)  or ('weight' not in name): continue
                 prox += (param - previous_global_model.get_parameter(name)).norm(2)
             loss += args.mu * prox
 
@@ -176,7 +176,7 @@ def scaffold_update(identifier, args, model, criterion, dataset, optimizer, lr):
             
             # update parameters by reflecting control varaites
             for name, param in model.named_parameters():
-                if ('local' in name) or ('running' in name) or ('batch' in name): continue
+                if ('local' in name) or ('bias' in name) or ('weight' not in name): continue
                 param = param - lr * (previous_global_model.get_parameter(f'{name}_local') - model.get_parameter(f'{name}_local'))
             
             # get loss
@@ -193,7 +193,6 @@ def scaffold_update(identifier, args, model, criterion, dataset, optimizer, lr):
             # clear cache
             if 'cuda' in args.device: torch.cuda.empty_cache()
         else:
-            # 
             # update control varaites (c^+_i - c_i)
             for name, param in model.named_parameters():
                 if ('local' in name) or ('running' in name) or ('batch' in name): continue
@@ -334,30 +333,6 @@ def fedrep_update(identifier, args, model, criterion, dataset, optimizer, lr):
 
 # APFL
 def apfl_update(identifier, args, model, criterion, dataset, optimizer, lr):
-    # set \bar(v)
-    ## get current personalized model based on the previous global model
-    personalized_model = copy.deepcopy(model)
-    personalized_model.apply(partial(set_lambda, lam=args.apfl_constant))
-    
-    ## prepare model
-    personalized_model.train()
-    initiate_model(personalized_model, args)
-    
-    ## update local model only
-    for name, parameter in personalized_model.named_parameters():
-        if 'local' in name:
-            parameter.requires_grad = True
-        else:
-            parameter.requires_grad = False
-
-    ## prepare optimizer       
-    local_optimizer = optimizer(
-        [parameter for name, parameter in personalized_model.named_parameters() if 'local' in name], 
-        lr=lr, 
-        momentum=0.9,
-        weight_decay=1e-4
-    )
-    
     # set w
     model.apply(partial(set_lambda, lam=0.0))
 
@@ -379,6 +354,26 @@ def apfl_update(identifier, args, model, criterion, dataset, optimizer, lr):
         momentum=0.9
     )
     
+    # set \bar{v}
+    ## get current personalized model based on the previous global model
+    personalized_model = copy.deepcopy(model)
+    personalized_model.apply(partial(set_lambda, lam=args.apfl_constant))
+
+    ## update local model only
+    for name, parameter in personalized_model.named_parameters():
+        if 'local' in name:
+            parameter.requires_grad = True
+        else:
+            parameter.requires_grad = False
+
+    ## prepare optimizer       
+    local_optimizer = optimizer(
+        [parameter for name, parameter in personalized_model.named_parameters() if 'local' in name], 
+        lr=lr, 
+        momentum=0.9,
+        weight_decay=1e-4
+    )
+    
     # make dataloader
     dataloader = torch.utils.data.DataLoader(dataset, batch_size=args.B, shuffle=True)
     
@@ -388,30 +383,43 @@ def apfl_update(identifier, args, model, criterion, dataset, optimizer, lr):
         losses, acc1, acc5, ece, mce = 0, 0, 0, 0, 0
         for inputs, targets in dataloader:
             inputs, targets = inputs.to(args.device), targets.to(args.device)
-
+            
+            # global model (\w)
             # inference
-            outputs = model(inputs); local_outputs = personalized_model(inputs)
-            global_loss = criterion()(outputs, targets); local_loss = criterion()(local_outputs, targets)
+            outputs = model(inputs); 
+            global_loss = criterion()(outputs, targets)
 
             # update
             for param in model.parameters(): param.grad = None
-            for param in personalized_model.parameters(): param.grad = None
-            global_loss.backward(); local_loss.backward()
-            global_optimizer.step(); local_optimizer.step()
+            global_loss.backward()
+            global_optimizer.step()
             
             # get loss
-            losses += global_loss.item() + local_loss.item()
+            losses += global_loss.item()
             
-            # temporarliy merge into personalized model for metrics (no need to `torch.no_grad()` as `state_dict()` returns params with no grad tracking)
-            temp_model = copy.deepcopy(model)
-            local_updated = {k: v for k, v in personalized_model.state_dict().items() if 'local' in k}
-            global_updated = model.state_dict()
-            global_updated.update(local_updated)
-            temp_model.load_state_dict(global_updated)
+            # local model (\v)
+            # inference
+            local_outputs = personalized_model(inputs)
+            local_loss = criterion()(local_outputs, targets)
+            
+            # update
+            for param in personalized_model.parameters(): param.grad = None
+            local_loss.backward()
+            local_optimizer.step()
+            
+            # get loss
+            losses += local_loss.item()
+            
+            # evaluate with personalized model (\bar{v}) temporarliy merge into personalized model (\bar(v)) for metrics
+            with torch.no_grad():
+                temp_model = copy.deepcopy(model)
+                local_updated = {k: v for k, v in personalized_model.state_dict().items() if 'local' in k}
+                global_updated = temp_model.state_dict()
+                global_updated.update(local_updated)
+                temp_model.load_state_dict(global_updated)
 
-            temp_model.apply(partial(set_lambda, lam=args.apfl_constant))
-            outputs = temp_model(inputs)
-            del temp_model
+                temp_model.apply(partial(set_lambda, lam=args.apfl_constant))
+                outputs = temp_model(inputs)
                 
             # get accuracy
             accs = get_accuracy(outputs, targets, (1, 5))
@@ -545,8 +553,8 @@ def ditto_update(identifier, args, model, criterion, dataset, optimizer, lr):
             # calculate regularization term toward optimal global model
             prox = 0.
             for name, param in model.named_parameters():
-                if 'local' not in name: continue
-                prox += (param - previous_global_model.state_dict()[name[:-6]]).norm(2)
+                if ('local' not in name) or ('weight' not in name): continue
+                prox += (param - previous_global_model.get_parameter(name.replace('_local', ''))).norm(2)
             local_loss += args.mu * prox            
             
             # update
@@ -621,7 +629,7 @@ def pfedme_update(identifier, args, model, criterion, dataset, optimizer, lr):
             # calculate regularization term toward global model
             prox = 0.
             for name, param in model.named_parameters():
-                if 'local' not in name: continue
+                if ('local' not in name) or ('weight' not in name): continue
                 prox += (param - model.get_parameter(name.replace('_local', '')).detach()).norm(2)
             loss += args.mu * prox        
             
@@ -659,7 +667,6 @@ def pfedme_update(identifier, args, model, criterion, dataset, optimizer, lr):
 
     
     
-    
 # SuPerFed-MM (Model-wise Mixture) & SuPerFed-LM (Layer-wise Mixture)
 def superfed_update(identifier, args, model, criterion, dataset, optimizer, lr, start_mix):            
     # retrieve mode (MM or LM)
@@ -692,7 +699,7 @@ def superfed_update(identifier, args, model, criterion, dataset, optimizer, lr, 
             
     # prepare optimizer       
     optimizer = optimizer(
-        model.parameters() if start_mix else [param for name, param in model.named_parameters() if ('local' not in name) and ('mixed' not in name)], 
+        model.parameters() if start_mix else [param for name, param in model.named_parameters() if 'local' not in name], 
         lr=lr, 
         momentum=0.9, 
         weight_decay=1e-4
@@ -719,19 +726,19 @@ def superfed_update(identifier, args, model, criterion, dataset, optimizer, lr, 
             if args.mu > 0:
                 prox = 0.
                 for name, param in model.named_parameters(): 
-                    if 'local' in name: continue
-                    prox += (param - previous_global_model.get_parameter(name)).norm(2)
+                    if 'local' not in name: continue
+                    prox += (model.get_parameter(name.replace('_local', '')) - previous_global_model.get_parameter(name.replace('_local', ''))).norm(2)
                 loss += args.mu * prox
 
             # subspace construction
             if start_mix:
                 numerator, norm_1, norm_2 = 0, 0, 0
-                for name, param_g in model.named_parameters():
-                    if 'local' in name: continue
-                    param_l = model.get_parameter(f'{name}_local')
-                    numerator += (param_g * param_l).sum()
-                    norm_1 += param_g.pow(2).sum().add(1e-6)
-                    norm_2 += param_l.pow(2).sum().add(1e-6)
+                for name, param_l in model.named_parameters():
+                    if 'local' not in name: continue
+                    param_g = model.get_parameter(name.replace('_local', ''))
+                    numerator += (param_g * param_l).add(1e-6).sum()
+                    norm_1 += param_g.pow(2).sum()
+                    norm_2 += param_l.pow(2).sum()
                 cos_sim = numerator.pow(2).div(norm_1 * norm_2)
                 loss += args.nu * cos_sim
             
@@ -875,6 +882,6 @@ def superfed_evaluate(identifier, args, model, criterion, dataset, current_round
     best_acc_idx = results[1].argmax()
     losses, acc1, acc5, ece, mce = results[:, best_acc_idx].squeeze()
     
-    print(f'\t[EVALUATION - CLIENT ({str(identifier).zfill(4)})] Loss: {losses:.4f}, Top1 Acc.: {acc1:.4f}, Top5 Acc.: {acc5:.4f}, ECE: {ece:.4f}, MCE: {mce:.4f}')
+    print(f'\t[EVALUATION - CLIENT ({str(identifier).zfill(4)})] Loss: {losses:.4f}, Top1 Acc.: {acc1:.4f}, Top5 Acc.: {acc5:.4f}, ECE: {ece:.4f}, MCE: {mce:.4f}, LAMBDA: {0 + 0.1 * best_acc_idx:.2f}')
     model.to('cpu')
     return results

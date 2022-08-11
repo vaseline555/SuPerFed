@@ -5,10 +5,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from torch.utils.data import DataLoader
-from .utils import init_weights
 from .algorithm import *
-
 
 
 
@@ -71,7 +68,7 @@ class Client(object):
             basic_update(identifier=self.client_id, args=self.args, model=self._model, criterion=self.criterion, dataset=self.training_set, optimizer=self.optimizer, lr=current_lr)
         elif self.algorithm in ['scaffold']:
             self.control_variates = copy.deepcopy(self._model)
-            scaffold_update(identifier=self.client_id, args=self.args, model=self._model, criterion=self.criterion, dataset=self.training_set, optimizer=self.optimizer, lr=self.lr)
+            scaffold_update(identifier=self.client_id, args=self.args, model=self._model, criterion=self.criterion, dataset=self.training_set, optimizer=self.optimizer, lr=current_lr)
         elif self.algorithm in ['fedrep']:
             fedrep_update(identifier=self.client_id, args=self.args, model=self._model, criterion=self.criterion, dataset=self.training_set, optimizer=self.optimizer, lr=current_lr)
         elif self.algorithm in ['fedprox']:
