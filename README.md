@@ -1,13 +1,13 @@
 # SuPerFed
-This repository is an official implementation of the SIGKDD 2022 paper `Connecting Low-Loss Subspace for Personalized Federated Learning` by Seok-Ju (Adam) Hahn, Minwoo Jeong, Junghye lee.  
-[ [PAPER](https://arxiv.org/abs/2109.07628) | [POSTER]() | [SLIDE](https://github.com/vaseline555/SuPerFed/blob/12947b01af3f118b9ae8543d021ae3d256c2b2e7/assets/SIGKDD2022_SuPerFed_Presentation_Seok-Ju%20Hahn.pdf) | [VIDEO](https://dl.acm.org/action/downloadSupplement?doi=10.1145%2F3534678.3539254&file=KDD22-fp0360..mp4) ]
+This repository is an official implementation of the SIGKDD 2022 paper `Connecting Low-Loss Subspace for Personalized Federated Learning` by **Seok-Ju (Adam) Hahn**, Minwoo Jeong and Junghye lee.  
+[ [PAPER](https://arxiv.org/abs/2109.07628) | [POSTER](https://github.com/vaseline555/SuPerFed/blob/main/assets/SIGKDD2022_SuPerFed_Poster_Seok-Ju%20Hahn.pdf) | [SLIDE](https://github.com/vaseline555/SuPerFed/blob/12947b01af3f118b9ae8543d021ae3d256c2b2e7/assets/SIGKDD2022_SuPerFed_Presentation_Seok-Ju%20Hahn.pdf) | [VIDEO](https://dl.acm.org/action/downloadSupplement?doi=10.1145%2F3534678.3539254&file=KDD22-fp0360..mp4) ]
 
 # Abstract
 Due to the curse of statistical heterogeneity across clients, adopting a personalized federated learning method has become an essential choice for the successful deployment of federated learning-based services. Among diverse branches of personalization techniques, a model mixture-based personalization method is preferred as each client has their own personalized model as a result of federated learning. It usually requires a local model and a federated model, but this approach is either limited to partial parameter exchange or requires additional local updates, each of which is helpless to novel clients and burdensome to the client's computational capacity. As the existence of a connected subspace containing diverse low-loss solutions between two or more independent deep networks has been discovered, we combined this interesting property with the model mixture-based personalized federated learning method for improved performance of personalization.
 We proposed SuPerFed, a personalized federated learning method that induces an explicit connection between the optima of the local and the federated model in weight space for boosting each other. Through extensive experiments on several benchmark datasets, we demonstrated that our method achieves consistent gains in both personalization performance and robustness to problematic scenarios possible in realistic services.
 
-# Dependendcies
-* Please install required packages first by executing a command `pip install -r requirements.txt`.
+# Dependencies
+* Please install the required packages first by executing a command `pip install -r requirements.txt`.
 ```
 torch >= 1.9
 torchvision >= 0.10
