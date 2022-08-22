@@ -49,7 +49,7 @@ python3 main.py --exp_name superfed-mm_shakespeare \
 --eval_every 50
 ```
 
-# Cite in BibTex
+# Cite in BibTeX
 ```
 @inproceedings{SuPerFed,
 author = {Hahn, Seok-Ju and Jeong, Minwoo and Lee, Junghye},
