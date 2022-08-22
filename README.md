@@ -58,15 +58,14 @@ year = {2022},
 isbn = {9781450393850},
 publisher = {Association for Computing Machinery},
 address = {New York, NY, USA},
-url = {https://doi.org/10.48550/arXiv.2109.07628},
 doi = {10.1145/3534678.3539254},
 booktitle = {Proceedings of the 28th ACM SIGKDD Conference on Knowledge Discovery and Data Mining},
 pages = {505–515},
 numpages = {11},
-keywords = {personalization, mode connectivity, non-iid data, label noise, federated learning, personalized federated learning},
+keywords = {label noise, federated learning, personalization, personalized federated learning, non-iid data, mode connectivity},
 location = {Washington DC, USA},
-series = {KDD '22}
-}
+series = {KDD '22},
+note = "\url{https://dl.acm.org/doi/abs/10.1145/3534678.3539254} and \url{https://arxiv.org/abs/2109.07628}"}
 ```
 
 # Contact
