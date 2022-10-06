@@ -65,7 +65,8 @@ numpages = {11},
 keywords = {label noise, federated learning, personalization, personalized federated learning, non-iid data, mode connectivity},
 location = {Washington DC, USA},
 series = {KDD '22},
-note = "\url{https://dl.acm.org/doi/abs/10.1145/3534678.3539254} and \url{https://arxiv.org/abs/2109.07628}"}
+archivePrefix = {arXiv},
+arxivId = {2109.07628}
 ```
 
 # Contact
