@@ -1,5 +1,5 @@
 # SuPerFed
-![SuPerFed_Overview](https://github.com/vaseline555/SuPerFed/blob/main/assets/SuPerFed_Figure.png)
+![SuPerFed_Overview](https://github.com/vaseline555/SuPerFed/blob/main/assets/SuPerFed_Figure.jpg)
 This repository is an official implementation of the SIGKDD 2022 paper `Connecting Low-Loss Subspace for Personalized Federated Learning` by **Seok-Ju (Adam) Hahn**, Minwoo Jeong and Junghye lee.  
 [ [PAPER](https://arxiv.org/abs/2109.07628) | [POSTER](https://github.com/vaseline555/SuPerFed/blob/main/assets/SIGKDD2022_SuPerFed_Poster_Seok-Ju%20Hahn.pdf) | [SLIDE](https://github.com/vaseline555/SuPerFed/blob/12947b01af3f118b9ae8543d021ae3d256c2b2e7/assets/SIGKDD2022_SuPerFed_Presentation_Seok-Ju%20Hahn.pdf) | [VIDEO](https://dl.acm.org/action/downloadSupplement?doi=10.1145%2F3534678.3539254&file=KDD22-fp0360..mp4) ]
 
