@@ -1,7 +1,14 @@
-# SuPerFed
+# (SuPerFed) Connecting Low-Loss Subspace for Personalized Federated Learning [![Generic badge](https://img.shields.io/badge/code-official-green.svg)](https://shields.io/)
 ![SuPerFed_Overview](https://github.com/vaseline555/SuPerFed/blob/main/assets/SuPerFed_Overview.jpg)
 This repository is an official implementation of the SIGKDD 2022 paper `Connecting Low-Loss Subspace for Personalized Federated Learning` by **Seok-Ju (Adam) Hahn**, Minwoo Jeong and Junghye lee.  
 [ [PAPER](https://arxiv.org/abs/2109.07628) | [POSTER](https://github.com/vaseline555/SuPerFed/blob/main/assets/SIGKDD2022_SuPerFed_Poster_Seok-Ju%20Hahn.pdf) | [SLIDE](https://github.com/vaseline555/SuPerFed/blob/12947b01af3f118b9ae8543d021ae3d256c2b2e7/assets/SIGKDD2022_SuPerFed_Presentation_Seok-Ju%20Hahn.pdf) | [VIDEO](https://dl.acm.org/action/downloadSupplement?doi=10.1145%2F3534678.3539254&file=KDD22-fp0360..mp4) ]
+
+[![PWC](https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/badge/subspace-learning-for-personalized-federated/personalized-federated-learning-on-mnist-1)](https://paperswithcode.com/sota/personalized-federated-learning-on-mnist-1?p=subspace-learning-for-personalized-federated) \
+[![PWC](https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/badge/subspace-learning-for-personalized-federated/personalized-federated-learning-on-cifar-10)](https://paperswithcode.com/sota/personalized-federated-learning-on-cifar-10?p=subspace-learning-for-personalized-federated) \
+[![PWC](https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/badge/subspace-learning-for-personalized-federated/personalized-federated-learning-on-cifar-100)](https://paperswithcode.com/sota/personalized-federated-learning-on-cifar-100?p=subspace-learning-for-personalized-federated) \
+[![PWC](https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/badge/subspace-learning-for-personalized-federated/personalized-federated-learning-on-tiny)](https://paperswithcode.com/sota/personalized-federated-learning-on-tiny?p=subspace-learning-for-personalized-federated) \
+[![PWC](https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/badge/subspace-learning-for-personalized-federated/personalized-federated-learning-on-femnist)](https://paperswithcode.com/sota/personalized-federated-learning-on-femnist?p=subspace-learning-for-personalized-federated) \
+[![PWC](https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/badge/subspace-learning-for-personalized-federated/personalized-federated-learning-on)](https://paperswithcode.com/sota/personalized-federated-learning-on?p=subspace-learning-for-personalized-federated)
 
 # Abstract
 Due to the curse of statistical heterogeneity across clients, adopting a personalized federated learning method has become an essential choice for the successful deployment of federated learning-based services. Among diverse branches of personalization techniques, a model mixture-based personalization method is preferred as each client has their own personalized model as a result of federated learning. It usually requires a local model and a federated model, but this approach is either limited to partial parameter exchange or requires additional local updates, each of which is helpless to novel clients and burdensome to the client's computational capacity. As the existence of a connected subspace containing diverse low-loss solutions between two or more independent deep networks has been discovered, we combined this interesting property with the model mixture-based personalized federated learning method for improved performance of personalization.
@@ -71,4 +78,4 @@ arxivId = {2109.07628}
 ```
 
 # Contact
-Feel free to contact the first author (Adam; seokjuhahn@unist.ac.kr) or leave an issue if face with a problem when using this implementation. Thank you! =)
+Feel free to contact the first author (Adam; seokjuhahn@unist.ac.kr) or leave an issue if face with a problem when using this implementation. Thank you! :smiley:
