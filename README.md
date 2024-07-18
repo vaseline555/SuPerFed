@@ -61,21 +61,22 @@ python3 main.py --exp_name superfed-mm_shakespeare \
 # Cite in BibTeX
 ```
 @inproceedings{SuPerFed,
-author = {Hahn, Seok-Ju and Jeong, Minwoo and Lee, Junghye},
-title = {Connecting Low-Loss Subspace for Personalized Federated Learning},
-year = {2022},
-isbn = {9781450393850},
-publisher = {Association for Computing Machinery},
-address = {New York, NY, USA},
-doi = {10.1145/3534678.3539254},
-booktitle = {Proceedings of the 28th ACM SIGKDD Conference on Knowledge Discovery and Data Mining},
-pages = {505–515},
-numpages = {11},
-keywords = {label noise, federated learning, personalization, personalized federated learning, non-iid data, mode connectivity},
-location = {Washington DC, USA},
-series = {KDD '22},
-archivePrefix = {arXiv},
-arxivId = {2109.07628}
+  author = {Hahn, Seok-Ju and Jeong, Minwoo and Lee, Junghye},
+  title = {Connecting Low-Loss Subspace for Personalized Federated Learning},
+  year = {2022},
+  isbn = {9781450393850},
+  publisher = {Association for Computing Machinery},
+  address = {New York, NY, USA},
+  doi = {10.1145/3534678.3539254},
+  booktitle = {Proceedings of the 28th ACM SIGKDD Conference on Knowledge Discovery and Data Mining},
+  pages = {505–515},
+  numpages = {11},
+  keywords = {label noise, federated learning, personalization, personalized federated learning, non-iid data, mode connectivity},
+  location = {Washington DC, USA},
+  series = {KDD '22},
+  archivePrefix = {arXiv},
+  arxivId = {2109.07628}
+}
 ```
 
 # Contact
